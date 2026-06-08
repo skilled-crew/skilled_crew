@@ -4,20 +4,18 @@ title: Slash commands
 
 # Slash commands
 
-Inside `chat`, anything starting with `/` is a **slash command**. Several are built into the runtime; the rest are user-defined via [`.command.md`](/configuration/command-md) files referenced from your `.skilled_crew.yaml`.
+Inside `chat`, anything starting with `/` is a **slash command**. There are three kinds: a handful are **built into the runtime**; some are **injected by a higher layer** (the [job lane](/jobs/overview) in the separate `skilled_workflow` package adds its own); and the rest are **user-defined** via [`.command.md`](/configuration/command-md) files referenced from your `.skilled_crew.yaml`.
 
 ## Built-in commands
 
+These are the only commands the base `_skillet_agent` runtime ships:
+
 | Command | Behavior |
 |---|---|
-| [`/help`](#help) | List every slash command (built-in + user-defined) with its description. |
+| [`/help`](#help) | List every slash command (built-in, injected, and user-defined) with its description. |
 | [`/skills`](#skills) | List the skills available to the current agent. |
 | [`/mcp_servers`](#mcp_servers) | List attached MCP servers and the tools each one exposes. |
 | [`/compact`](#compact) | Force session compaction now. `/compact info` prints the current item count instead. |
-| [`/jobs`](#job-commands) | List the [job-lane](/jobs/overview) jobs that are ready, running, or blocked. |
-| [`/show <id>`](#job-commands) | Print the full detail of one job. |
-| [`/comment <id> <text>`](#job-commands) | Append a comment to a job. |
-| [`/unblock <id>`](#job-commands) | Move a blocked job back to ready. |
 | [`/exit`](#exit) | Quit the REPL. Closes MCP connections and exits cleanly. |
 
 Empty input — just pressing Enter — is treated as `/help`.
@@ -38,9 +36,9 @@ Lists the MCP servers wired to the current agent and, for each one, the tools th
 
 The session is automatically compacted once it grows past 40 non-user items (see [Architecture › Compaction](/concepts/architecture#compaction)). `/compact` forces it now. `/compact info` reports the current item count without compacting. Those are the only two forms — any other argument prints a usage error (there is no free-text hint).
 
-### Job commands
+## Injected commands: the job lane
 
-When the [job lane](/jobs/overview) is in use, four built-ins let you inspect and nudge the board without leaving chat:
+The job commands are **not** part of `_skillet_agent`. They are *external slash commands* registered by a higher layer — the [job lane](/jobs/overview) orchestrator in the separate `skilled_workflow` package. The base runner knows nothing about them; it just dispatches by name (`extensions.externalSlashCommands`) and lets the injecting layer handle the rest. When you run through the job lane, four extra commands let you inspect and nudge the board without leaving chat:
 
 | Command | Behavior |
 |---|---|
@@ -49,7 +47,7 @@ When the [job lane](/jobs/overview) is in use, four built-ins let you inspect an
 | `/comment <id> <text>` | Append a user comment to a job. |
 | `/unblock <id>` | Move a blocked job back to `ready` so the dispatcher can re-claim it. |
 
-These read the same board as the [`jobs`](/jobs/cli) CLI commands (the SQLite file at `SKILLET_JOB_DB`, default `./outputs/.skillet_jobs.sqlite`).
+These read the same board as the [`jobs`](/jobs/cli) CLI commands. They appear in `/help` only when the job lane has injected them.
 
 ### `/exit`
 

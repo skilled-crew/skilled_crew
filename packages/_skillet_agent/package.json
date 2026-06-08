@@ -1,6 +1,6 @@
 {
     "name": "skilled_crew",
-    "version": "1.0.6",
+    "version": "1.0.11",
     "description": "Markdown-driven AI agent orchestration engine — describe agents and skills in one .skilled_crew.yaml file, then run them interactively (CLI or web) or as durable, scheduled jobs.",
     "type": "module",
     "main": "./dist/cli.js",
@@ -15,14 +15,18 @@
     },
     "files": [
         "dist",
+        "data",
+        "!data/**/node_modules",
+        "!data/**/_demos",
         "README.md",
-        "scripts/install_data_subprojects.sh"
+        "scripts/install_data_subprojects.sh",
+        "scripts/seed_default_user.sh"
     ],
     "publishConfig": {
         "access": "public"
     },
     "scripts": {
-        "postinstall": "sh ./scripts/install_data_subprojects.sh",
+        "postinstall": "sh ./scripts/install_data_subprojects.sh && sh ./scripts/seed_default_user.sh",
         "dev:run:todo_list": "tsx ./src/cli.ts run -c ./data/skillets/todo_list.skilled_crew.yaml 'what are my tasks?'",
         "dev:chat:todo_list": "tsx ./src/cli.ts chat -c ./data/skillets/todo_list.skilled_crew.yaml",
         "dev:chat:bluesky_social_manager": "tsx ./src/cli.ts chat -c ./data/skillets/bluesky_social_manager.skilled_crew.yaml",

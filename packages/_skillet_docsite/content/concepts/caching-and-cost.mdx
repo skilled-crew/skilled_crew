@@ -4,7 +4,7 @@ title: Caching and cost
 
 # Caching and cost
 
-Every OpenAI request the runtime makes flows through two SQLite-backed middlewares: a **response cache** and a **per-call cost tracker**. Both ship out of the box, both live under `./outputs/`, and both are safe to delete at any time.
+Every OpenAI request the runtime makes flows through two SQLite-backed middlewares: a **response cache** and a **per-call cost tracker**. Both ship out of the box and are safe to delete at any time. They live in different [`SkilletPaths`](/api/classes/SkilletPaths) roles — the cache under the disposable **cache** directory, the cost tracker under the persistent **state** directory (see [where these files live](/concepts/sessions-and-logs#where-these-files-live)). The paths below use the development layout, relative to the repo root.
 
 ## The request pipeline
 
@@ -28,7 +28,7 @@ Wiring lives in [`UtilsAi.getOpenAiClient`](/api/classes/AgentRunner). Each `Ope
 ## Response cache
 
 - **Backend:** SQLite via `@keyv/sqlite`, wrapped by [`openai-cache`](https://www.npmjs.com/package/openai-cache).
-- **File:** `./outputs/.openai_cache.sqlite`
+- **File:** `.skilled-agent/cache/.openai_cache.sqlite`
 - **Key:** the full request payload — model, messages, tools, parameters. Two identical requests share a cache entry.
 - **Marker:** `markResponseEnabled: true` adds a custom header so you can tell if a response came from the cache.
 
@@ -38,13 +38,13 @@ Clear it:
 
 ```bash
 npm run openai_cache:clean
-# equivalent to: rm -f ./outputs/.openai_cache.sqlite
+# equivalent to: rm -f ../../.skilled-agent/cache/.openai_cache.sqlite
 ```
 
 ## Cost tracker
 
 - **Backend:** SQLite via [`openai-cost`](https://www.npmjs.com/package/openai-cost).
-- **File:** `./outputs/.openai_cost_tracker.sqlite`
+- **File:** `.skilled-agent/state/.openai_cost_tracker.sqlite`
 - **Bucket id:** `tracker_bucket/{userId}/{skilletId}/{sessionName}`. Each call is tagged so you can slice the data by user, skillet, and session.
 - **What it records:** model, prompt/completion tokens, computed cost, timestamp, bucket.
 
@@ -66,7 +66,7 @@ This runs:
 npx --package=openai-cost openai_cost_pp \
   -p '{namespace}/{userId}/{skilletId}/{sessionId}' \
   -k userId,skilletId \
-  -i ./outputs/.openai_cost_tracker.sqlite \
+  -i ../../.skilled-agent/state/.openai_cost_tracker.sqlite \
   -w
 ```
 
@@ -76,7 +76,7 @@ npx --package=openai-cost openai_cost_pp \
 
 ```bash
 npm run dev:cost:clear
-# equivalent to: rm -f ./outputs/.openai_cost_tracker.sqlite
+# equivalent to: rm -f ../../.skilled-agent/state/.openai_cost_tracker.sqlite
 ```
 
 There's a combined "clean everything" too:
@@ -88,5 +88,5 @@ npm run clean:all
 
 ## What's not tracked
 
-- **LMStudio calls** also flow through the same fetch wrapper, so cache hits work locally. Cost rows are still written but the dollar amounts will be zero (LMStudio is local).
+- **Local-provider calls** (LMStudio and Ollama) also flow through the same fetch wrapper, so cache hits work locally. Cost rows are still written but the dollar amounts will be zero (the model runs on your own machine).
 - **Calls outside the runtime** — if your skill scripts hit external APIs themselves, those costs are entirely yours to track.

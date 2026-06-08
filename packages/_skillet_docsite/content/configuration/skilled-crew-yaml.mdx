@@ -52,6 +52,7 @@ Each entry under `agents` defines one agent. The map key is the agent name (used
 | Key | Type | Default | Purpose |
 |---|---|---|---|
 | `instructionsPath` | string \| null | `null` | Path to the [`AGENTS.md`](/configuration/agents-md) instructions file. If null, the agent runs with only its skills. |
+| `codeWorkerPath` | string \| null | `null` | Path to a deterministic code-worker module (`.ts`/`.js`). When set, [job-lane](/jobs/overview) work routed to this agent runs the module's exported entry function as plain code — no LLM agent is created. Mutually exclusive with `instructionsPath` / `skills`; used for fully deterministic steps such as an approval gate. |
 | `mcp_servers` | array | `[]` | [MCP servers](/configuration/mcp-servers) exposed as tools to this agent. Each entry has a `filePath` to a JSON config. |
 | `skills` | array | `[]` | [Skills](/configuration/skill-md) available to this agent. Each becomes a callable sub-agent. Each entry has a `name` (must match the skill folder name and the `name:` in `SKILL.md`) and a `folderPath`. |
 

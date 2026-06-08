@@ -7,7 +7,7 @@ title: Install
 ## Prerequisites
 
 - **Node.js 22+** and **npm** (CI runs on Node 22). The package is ESM and targets ES2022.
-- An **OpenAI API key** if you plan to use `gpt-*` models. Local models via [LMStudio](/models) need no key.
+- An **OpenAI API key** if you plan to use `gpt-*` models. Local models via [LMStudio or Ollama](/models) need no key.
 
 ## Clone and install
 
@@ -15,9 +15,11 @@ title: Install
 
 ```bash
 git clone https://github.com/skilled-crew/skilled_crew.git
-cd skillet_agent/packages/_skillet_agent
+cd skilled_crew/packages/_skillet_agent
 npm install
 ```
+
+`npm install` runs the package's `postinstall` step, which seeds a default user (`john@example.com`) so the CLI works on its first run without a manual setup step (issue [#261](https://github.com/skilled-crew/skilled_crew/issues/261)).
 
 ## Configure the environment
 
@@ -39,23 +41,21 @@ Optional overrides:
 |---|---|---|
 | `OPENAI_BASE_URL` | OpenAI SDK default | Override the base URL for the `openai` provider (e.g. to point at a proxy or gateway). |
 | `LMSTUDIO_BASE_URL` | `http://localhost:1234/v1` | Override the base URL for the `lmstudio` provider (e.g. a remote LMStudio host). |
-| `SKILLET_MODEL_RUNNER` | `openai/gpt-4.1-nano` | Model used by the orchestrator and skill agents. Format: `<provider>/<model>`. Supported providers: `openai`, `lmstudio`. |
+| `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Override the base URL for the `ollama` provider (e.g. a remote Ollama host). |
+| `SKILLET_MODEL_RUNNER` | `openai/gpt-4.1-nano` | Model used by the orchestrator and skill agents. Format: `<provider>/<model>`. Supported providers: `openai`, `lmstudio`, `ollama`. When set, it is preflighted before the run and exits early if the provider is unreachable. |
 | `SKILLET_MODEL_EVAL` | `openai/gpt-4.1-nano` | Model used by the LLM-as-judge in `eval_grade`. Same `<provider>/<model>` format. |
 
 If the override is not set, the runner falls back to the per-agent `model` line in `AGENTS.md`, then to `openai/gpt-4.1-nano`. See [Models](/models) for the full list of supported providers.
 
-### Background jobs
-
-The [job lane](/jobs/overview) reads a few optional variables (all have safe defaults):
+The agent itself reads one optional run-control variable:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SKILLET_JOB_DB` | `./outputs/.skillet_jobs.sqlite` | Path to the job board / schedules SQLite file. |
-| `SKILLET_JOB_BUDGET_USD` | off | Spend cap for the [dispatcher](/jobs/dispatcher); once windowed spend reaches it, no new jobs are claimed. |
-| `SKILLET_JOB_BUDGET_WINDOW_HOURS` | `24` | Rolling window for the budget cap. |
-| `SKILLET_MAX_TURNS` | `50` | Per-run cap on agent turns. |
+| `SKILLET_MAX_TURNS` | `50` | Per-run cap on agent turns, before the runner stops the loop. |
 
-`SKILLET_JOB_ID` is set automatically on a job worker process — you don't set it by hand.
+### Background jobs
+
+The durable [job lane](/jobs/overview) — background jobs, crews, the dispatcher, and schedules — now lives in a **separate `skilled_workflow` package**, not in `_skillet_agent`. It reuses the same agent runtime as a library and reads its own optional variables (spend caps via `SKILLET_JOB_BUDGET_USD` / `SKILLET_JOB_BUDGET_WINDOW_HOURS`, notifications via `SKILLET_NOTIFY_*`), documented in [Jobs & Scheduling](/jobs/overview). `SKILLET_JOB_ID` is set automatically on a job worker process — you never set it by hand.
 
 ### Web client
 
@@ -77,13 +77,13 @@ Run the sample `todo_list` skillet in one-shot mode:
 npm run dev:run:todo_list
 ```
 
-You should see the agent list the tasks currently in `outputs/tasks.json`. If you instead want an interactive REPL:
+You should see the agent list the tasks currently in the `todo_list` skill's own data file (`data/dotclaude_todo_list/_data/tasks.json`). If you instead want an interactive REPL:
 
 ```bash
 npm run dev:chat:todo_list
 ```
 
-Either command creates an `outputs/` directory alongside the source, which holds the session SQLite store, cache, cost tracker, and the JSONL replay logs. See [Sessions and logs](/concepts/sessions-and-logs) for what each file is for.
+Either command creates a `.skilled-agent/` directory at the repo root (when running from a checkout), holding the session SQLite store, cost tracker, and JSONL replay logs under `state/`, and the response cache under `cache/`. Installed via npm, these follow the XDG base directories instead. See [Sessions and logs › Where these files live](/concepts/sessions-and-logs#where-these-files-live) for the full layout.
 
 ## Next
 

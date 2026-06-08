@@ -17,7 +17,7 @@ import { SkilletPaths } from './skillet_paths';
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-export type UtilsAiProvider = 'openai' | 'lmstudio';
+export type UtilsAiProvider = 'openai' | 'lmstudio' | 'ollama';
 
 export type ProviderModelSpec = {
 	provider: UtilsAiProvider;
@@ -28,9 +28,26 @@ export class UtilsAi {
 	static PROVIDER = {
 		OPENAI: 'openai' as UtilsAiProvider,
 		LMSTUDIO: 'lmstudio' as UtilsAiProvider,
+		OLLAMA: 'ollama' as UtilsAiProvider,
 	}
 
-	static SUPPORTED_PROVIDERS: UtilsAiProvider[] = ['openai', 'lmstudio'];
+	static SUPPORTED_PROVIDERS: UtilsAiProvider[] = ['openai', 'lmstudio', 'ollama'];
+
+	// Bound the local-server reachability probe (lmstudio, ollama) so a dead
+	// server fails the preflight fast instead of hanging the CLI. Mirrors the
+	// probe timeout the web client's ModelsDiscovery uses.
+	static PROVIDER_PROBE_TIMEOUT_MS = 1500;
+
+	// Per-provider client wiring: the env var that overrides the base URL, the local
+	// default base URL (omitted for openai, which falls back to the OpenAI SDK default),
+	// and an optional placeholder apiKey for key-free local providers. The OpenAI SDK
+	// constructor throws when no key is resolved, so ollama ships a dummy key whose value
+	// Ollama ignores; openai and lmstudio pass no apiKey and keep reading OPENAI_API_KEY.
+	static PROVIDER_CLIENT_CONFIGS: Record<UtilsAiProvider, { envVar: string; defaultBaseUrl?: string; apiKey?: string }> = {
+		openai: { envVar: 'OPENAI_BASE_URL' },
+		lmstudio: { envVar: 'LMSTUDIO_BASE_URL', defaultBaseUrl: 'http://localhost:1234/v1' },
+		ollama: { envVar: 'OLLAMA_BASE_URL', defaultBaseUrl: 'http://localhost:11434/v1', apiKey: 'ollama' },
+	};
 
 	// Single source of truth for the openai-cost tracker SQLite path. Both the
 	// client wiring (which writes it) and the job-lane cost rollup (which reads
@@ -63,6 +80,93 @@ export class UtilsAi {
 			provider: providerRaw as UtilsAiProvider,
 			modelName,
 		};
+	}
+
+	/**
+	 * Preflight the SKILLET_MODEL_RUNNER override, when set, so a run fails fast
+	 * with actionable guidance instead of dying inside the first model call (#265).
+	 *
+	 * Returns null when the variable is unset/empty or the selected provider is
+	 * actually usable; otherwise a human-facing message explaining how to fix it:
+	 *   - openai: OPENAI_API_KEY must be set.
+	 *   - lmstudio / ollama: the local server must be reachable at its base URL.
+	 */
+	static async checkModelRunnerRunnable(): Promise<string | null> {
+		const modelSpec = process.env.SKILLET_MODEL_RUNNER;
+		if (modelSpec === undefined || modelSpec === '') {
+			return null;
+		}
+
+		let provider: UtilsAiProvider;
+		try {
+			provider = UtilsAi.parseProviderModel(modelSpec).provider;
+		} catch (error) {
+			return error instanceof Error ? error.message : String(error);
+		}
+
+		return UtilsAi._checkProviderRunnable(provider, modelSpec);
+	}
+
+	/**
+	 * Provider-specific runnability check behind checkModelRunnerRunnable. openai
+	 * needs only OPENAI_API_KEY; the local providers (lmstudio, ollama) need their
+	 * OpenAI-compatible server reachable at its base URL. Returns null when
+	 * runnable, else a fix-oriented message naming the env var to set.
+	 */
+	private static async _checkProviderRunnable(provider: UtilsAiProvider, modelSpec: string): Promise<string | null> {
+		const context = `SKILLET_MODEL_RUNNER='${modelSpec}' (provider: ${provider})`;
+
+		if (provider === UtilsAi.PROVIDER.OPENAI) {
+			const apiKey = process.env.OPENAI_API_KEY;
+			if (apiKey === undefined || apiKey === '') {
+				return [
+					`${context} but OPENAI_API_KEY is not set.`,
+					`Set it in your environment or a .env file, for example:`,
+					`  export OPENAI_API_KEY=sk-...`,
+				].join('\n');
+			}
+			return null;
+		}
+
+		// Local providers: confirm the server is running before the run starts.
+		const clientConfig = UtilsAi.PROVIDER_CLIENT_CONFIGS[provider];
+		const baseURL = process.env[clientConfig.envVar] ?? clientConfig.defaultBaseUrl ?? '';
+		const reachable = await UtilsAi._isOpenAiCompatibleServerReachable(baseURL);
+		if (reachable === true) {
+			return null;
+		}
+
+		const startHint = provider === UtilsAi.PROVIDER.LMSTUDIO
+			? `Start the LM Studio local server (Developer tab, then Start Server)`
+			: `Start the Ollama server with 'ollama serve'`;
+		return [
+			`${context} but its server is not reachable at ${baseURL}.`,
+			`${startHint}, or set ${clientConfig.envVar} to the server's base URL.`,
+		].join('\n');
+	}
+
+	/**
+	 * Liveness probe for an OpenAI-compatible server: GET <baseURL>/models,
+	 * bounded by PROVIDER_PROBE_TIMEOUT_MS. Any HTTP response (even non-2xx) means
+	 * the server is up; only a network error or timeout counts as not reachable.
+	 * The response body is ignored — this checks the server is running, not which
+	 * models it serves.
+	 */
+	private static async _isOpenAiCompatibleServerReachable(baseURL: string): Promise<boolean> {
+		if (baseURL === '') {
+			return false;
+		}
+		const url = `${baseURL.replace(/\/$/, '')}/models`;
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), UtilsAi.PROVIDER_PROBE_TIMEOUT_MS);
+		try {
+			await fetch(url, { signal: controller.signal });
+			return true;
+		} catch {
+			return false;
+		} finally {
+			clearTimeout(timeoutId);
+		}
 	}
 
 	static async getOpenAiClient({
@@ -129,22 +233,16 @@ export class UtilsAi {
 		///////////////////////////////////////////////////////////////////////////////
 		///////////////////////////////////////////////////////////////////////////////
 
-		let openaiClient: OpenAI
-		if (provider === UtilsAi.PROVIDER.OPENAI) {
-			const baseURL = process.env.OPENAI_BASE_URL;
-			openaiClient = new OpenAI({
-				...(baseURL !== undefined && baseURL !== '' ? { baseURL } : {}),
-				fetch: fetchWithTracking, // use the fetch function with tracking capabilities
-			})
-		} else if (provider === UtilsAi.PROVIDER.LMSTUDIO) {
-			const baseURL = process.env.LMSTUDIO_BASE_URL ?? 'http://localhost:1234/v1';
-			openaiClient = new OpenAI({
-				baseURL,
-				fetch: fetchWithTracking, // use the fetch function with tracking capabilities
-			});
-		} else {
+		const clientConfig = UtilsAi.PROVIDER_CLIENT_CONFIGS[provider];
+		if (clientConfig === undefined) {
 			throw new Error(`Unsupported provider: ${provider}`);
 		}
+		const baseURL = process.env[clientConfig.envVar] ?? clientConfig.defaultBaseUrl;
+		const openaiClient = new OpenAI({
+			...(baseURL !== undefined && baseURL !== '' ? { baseURL } : {}),
+			...(clientConfig.apiKey !== undefined ? { apiKey: clientConfig.apiKey } : {}),
+			fetch: fetchWithTracking, // use the fetch function with tracking capabilities
+		});
 		return openaiClient;
 	}
 }

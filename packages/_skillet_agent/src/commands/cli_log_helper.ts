@@ -12,8 +12,9 @@ import { SkilletPaths } from '../libs/skillet_paths';
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 //	`log stream` — print existing user_message and final_result entries from all
-//	session JSONL files under outputs/.agent_session_logs, then keep tailing
-//	the directory for new appends and new files.
+//	session JSONL files under the agent state dir's .agent_session_logs
+//	(SkilletPaths.agentSessionLogsDir()), then keep tailing the directory for new
+//	appends and new files.
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -115,8 +116,9 @@ export class CliLogHelper {
 		if (optsPath !== undefined && optsPath !== '') {
 			return Path.resolve(optsPath);
 		}
-		// Anchor at the shared data dir (SKILLET_DATA_DIR ?? package outputs), not
-		// the caller's cwd — so streaming logs works no matter where it's invoked.
+		// Anchor at the SkilletPaths session-logs root (the agent state dir's
+		// .agent_session_logs), not the caller's cwd — so streaming logs works no
+		// matter where it's invoked.
 		return SkilletPaths.agentSessionLogsDir();
 	}
 

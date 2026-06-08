@@ -54,9 +54,19 @@ export class UserStore {
 	 * identity a worker writes under and the one the web reads back never drift. */
 	static readonly DEFAULT_USER_EMAIL = 'john@example.com';
 
-	/** Absolute path to the shared user-store SQLite, resolved against the agent
-	 * package root (`./outputs/.user_store.sqlite`) regardless of the caller's cwd
-	 * — so the webclient and CLI both open the exact same database file. */
+	/** Profile fields applied when the default user is first seeded by
+	 * {@link ensureDefaultUser}. The password is intentionally well-known: it is a
+	 * local-development convenience and matches the web client login and the
+	 * Playwright auth setup. */
+	static readonly DEFAULT_USER_DISPLAY_NAME = 'John Doe';
+	static readonly DEFAULT_USER_PASSWORD = 'weakPassword';
+	static readonly DEFAULT_USER_AVATAR_URL = '/_assets/images/jetienne-avatar.jpg';
+
+	/** Absolute path to the shared user-store SQLite, resolved through
+	 * {@link SkilletPaths.userStoreDb} (the agent state dir's `.user_store.sqlite`,
+	 * e.g. `.skilled-agent/state/.user_store.sqlite` in a checkout) regardless of
+	 * the caller's cwd — so the webclient and CLI both open the exact same database
+	 * file. */
 	static defaultDbPath(): string {
 		return SkilletPaths.userStoreDb();
 	}
@@ -180,6 +190,38 @@ export class UserStore {
 		};
 	}
 
+	/**
+	 * Seed the default local user on first call and return it on every call
+	 * thereafter. Idempotent, so it is safe to invoke on each CLI launch to give a
+	 * fresh checkout a usable identity without a manual seed step (issue #261).
+	 *
+	 * If a concurrent process wins the insert race (the UNIQUE email constraint
+	 * fires), the now-present record is fetched and returned rather than thrown.
+	 */
+	async ensureDefaultUser(): Promise<UserRecord> {
+		const existing = this.findByEmail(UserStore.DEFAULT_USER_EMAIL);
+		if (existing !== null) return existing;
+
+		try {
+			const user = await this.createLocalUser({
+				email: UserStore.DEFAULT_USER_EMAIL,
+				displayName: UserStore.DEFAULT_USER_DISPLAY_NAME,
+				password: UserStore.DEFAULT_USER_PASSWORD,
+				isAdmin: true,
+			});
+
+			this._sqliteDb.prepare(`
+				UPDATE users SET avatar_url = ? WHERE id = ?
+			`).run(UserStore.DEFAULT_USER_AVATAR_URL, user.id);
+
+			return { ...user, avatarUrl: UserStore.DEFAULT_USER_AVATAR_URL };
+		} catch (error) {
+			const seeded = this.findByEmail(UserStore.DEFAULT_USER_EMAIL);
+			if (seeded !== null) return seeded;
+			throw error;
+		}
+	}
+
 	///////////////////////////////////////////////////////////////////////////////
 	///////////////////////////////////////////////////////////////////////////////
 	//	Password verification
@@ -219,13 +261,9 @@ export class UserStore {
 
 async function main() {
 	const userStore = new UserStore(UserStore.defaultDbPath());
-	const user = await userStore.createLocalUser({ email: UserStore.DEFAULT_USER_EMAIL, displayName: 'John Doe', password: 'weakPassword', isAdmin: true });
-
-	// update the user with avatar url
-	const avatarUrl = '/_assets/images/jetienne-avatar.jpg';
-	userStore.getSqliteDatabase().prepare(`
-		UPDATE users SET avatar_url = ? WHERE id = ?
-	`).run(avatarUrl, user.id);
+	const user = await userStore.ensureDefaultUser();
+	userStore.close();
+	console.log(`Default user ready: ${user.email} (id ${user.id}).`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

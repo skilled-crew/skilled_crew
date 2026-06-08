@@ -9,11 +9,23 @@ A skillet keeps two distinct stores per conversation:
 - **A SQLite session store** is the canonical state the LLM sees. It holds the running list of items (user messages, assistant outputs, tool calls) that get re-sent to the model on the next turn.
 - **A JSONL replay log** is an append-only file the UI reads back to redraw a conversation. CLI replays and the web chat both consume the same file.
 
-Both are scoped by `userId` + `sessionName`. The CLI exposes both as flags (`--user-id`, `--session-name`); when omitted they default to `user_cli` and a freshly generated `session_<ISO timestamp>_<random>`. (The library-level `DEFAULT_USER_ID` / `DEFAULT_SESSION_NAME` constants exist, but the CLI overrides them with those values.)
+Both are scoped by `userId` + `sessionName`. The CLI exposes both as flags (`--user-email`, `--session-name`); when omitted they default to the seeded user `john@example.com` and a freshly generated `session_<ISO timestamp>_<random>`. The email **is** the `userId` — one identity shared with the [web client](/web-client/overview) — so it appears verbatim in the `user_id` column and, sanitized, as the per-user log directory.
+
+## Where these files live
+
+Runtime paths are resolved by [`SkilletPaths`](/api/classes/SkilletPaths), which splits them into three roles: **state** (the databases, session logs, and REPL history), **cache** (the disposable response cache), and **config** (your own crews). The location depends on how you run:
+
+| How you run | Base for all three roles |
+|---|---|
+| From a git checkout (development) | `<repo root>/.skilled-agent/` → `state/`, `cache/`, `config/` |
+| Installed via npm | XDG dirs: `~/.local/state/skilled-crew/`, `~/.cache/skilled-crew/`, `~/.config/skilled-crew/` |
+| `SKILLET_HOME` set | `$SKILLET_HOME/state`, `$SKILLET_HOME/cache`, `$SKILLET_HOME/config` |
+
+The paths below use the **development** layout (`.skilled-agent/state/…`, relative to the repo root). There is no longer an `outputs/` directory — that was the pre-`SkilletPaths` layout.
 
 ## SQLite session store
 
-File: `./outputs/.agent_sessions.sqlite`. Schema:
+File: `.skilled-agent/state/.agent_sessions.sqlite`. Schema:
 
 ```sql
 session_items (
@@ -28,8 +40,8 @@ session_items (
 Items are stored as opaque JSON blobs from the OpenAI Agents SDK. You can poke at it with `sqlite3` if needed:
 
 ```bash
-sqlite3 ./outputs/.agent_sessions.sqlite \
-  "SELECT count(*) FROM session_items WHERE user_id = 'user_cli';"
+sqlite3 .skilled-agent/state/.agent_sessions.sqlite \
+  "SELECT count(*) FROM session_items WHERE user_id = 'john@example.com';"
 ```
 
 The store is wrapped by `OpenAIResponsesCompactionSession` so the runtime never re-sends more than the compaction threshold (default 40 non-user items). Older content is collapsed into a summary turn.
@@ -39,10 +51,10 @@ The store is wrapped by `OpenAIResponsesCompactionSession` so the runtime never 
 Each `(userId, sessionName)` pair gets a single append-only file:
 
 ```
-./outputs/.agent_session_logs/{userId}/{sessionName}.jsonl
+.skilled-agent/state/.agent_session_logs/{userId}/{sessionName}.jsonl
 ```
 
-Names are sanitized to `[a-zA-Z0-9_-]+` before being used as path segments.
+Names are sanitized to `[a-zA-Z0-9_-]+` before being used as path segments, so the default user `john@example.com` becomes the directory `john_example_com`.
 
 A turn is **one** user message followed by zero or more step entries, closed by **one** final result. Three entry shapes — `kind: 'user_message'`, `kind: 'step'`, `kind: 'final_result'` — each timestamped:
 
@@ -63,13 +75,13 @@ When you start `chat` or `run` with an existing `--session-name`, the prior turn
 
 ```bash
 # Tail live as a chat (or a job worker) runs
-tail -f ./outputs/.agent_session_logs/user_cli/<session-name>.jsonl | jq
+tail -f .skilled-agent/state/.agent_session_logs/john_example_com/<session-name>.jsonl | jq
 
 # Stream every session log under the logs root, oldest-first, then follow new appends
 npx tsx ./src/cli.ts log stream
 ```
 
-`log stream` discovers every `.jsonl` under `./outputs/.agent_session_logs` (override with `--logs-dir`); it is the easiest way to watch running [job](/jobs/overview) workers. `SessionLogReader` and `SessionLogTailer` are also exported from the library — see [API › SessionLogReader](/api/classes/SessionLogReader).
+`log stream` discovers every `.jsonl` under the session-logs root (`.skilled-agent/state/.agent_session_logs` in development; override with `--logs-dir`); it is the easiest way to watch running [job](/jobs/overview) workers. `SessionLogReader` and `SessionLogTailer` are also exported from the library — see [API › SessionLogReader](/api/classes/SessionLogReader).
 
 ## Clearing state
 
@@ -77,11 +89,11 @@ The session store and the log are independent. Both can be wiped:
 
 ```bash
 # Drop one session's LLM context
-sqlite3 ./outputs/.agent_sessions.sqlite \
-  "DELETE FROM session_items WHERE user_id='user_cli' AND session_name='<session-name>';"
+sqlite3 .skilled-agent/state/.agent_sessions.sqlite \
+  "DELETE FROM session_items WHERE user_id='john@example.com' AND session_name='<session-name>';"
 
 # Drop one session's UI log
-rm ./outputs/.agent_session_logs/user_cli/<session-name>.jsonl
+rm .skilled-agent/state/.agent_session_logs/john_example_com/<session-name>.jsonl
 ```
 
 There's no single "clear everything" command in the CLI today — drop the files or rows you want gone.

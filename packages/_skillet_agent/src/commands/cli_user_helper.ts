@@ -10,6 +10,21 @@ import type { UserRecord } from '../libs/user_store';
  */
 export class CliUserHelper {
 	/**
+	 * Ensure the seeded default user exists in the shared store, creating it on
+	 * first run so the default `--user-email` resolves out of the box (issue #261).
+	 * Logs only when it actually creates the user, so repeat launches stay quiet.
+	 */
+	static async ensureDefaultUser(): Promise<void> {
+		const userStore = new UserStore(UserStore.defaultDbPath());
+		const alreadyPresent = userStore.findByEmail(UserStore.DEFAULT_USER_EMAIL) !== null;
+		const userRecord = await userStore.ensureDefaultUser();
+		userStore.close();
+		if (alreadyPresent === false) {
+			console.log(`Created default user "${userRecord.email}" in the user store (${UserStore.defaultDbPath()}).`);
+		}
+	}
+
+	/**
 	 * Resolve an email to its user record. Prints an actionable error and exits
 	 * the process with code 1 when no such user exists in the store.
 	 */

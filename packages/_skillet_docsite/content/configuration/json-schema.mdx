@@ -6,15 +6,14 @@ title: JSON Schema (VSCode)
 
 `SkilledCrewYamlConfigZod` (the Zod schema in [`src/config/skilled_crew_yaml/skilled_crew_yaml_zod.ts`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/src/config/skilled_crew_yaml/skilled_crew_yaml_zod.ts)) is the source of truth for `.skilled_crew.yaml`. The CLI can serialize it as a JSON Schema so editors can offer autocomplete, hover docs, and inline validation while you write a skillet.
 
-## Generate the schemas
+## Generate the schema
 
 ```bash
 npm run schema:generate
 # writes packages/_skillet_agent/data/schemas/skilled_crew.schema.json
-#    and packages/_skillet_agent/data/schemas/job_workflow.schema.json
 ```
 
-`schema_generate` emits **two** schemas: one for `.skilled_crew.yaml` (from `SkilledCrewYamlConfigZod`) and one for [`.job_workflow.yaml`](/jobs/job-templates) (from `JobTemplateConfigZod`). Re-run this whenever you change either Zod source. Both files are committed so reviewers see schema changes alongside source changes.
+The agent's `schema_generate` emits one schema, for `.skilled_crew.yaml` (from `SkilledCrewYamlConfigZod`). Re-run it whenever you change the Zod source; the committed file lets reviewers see schema changes alongside source changes. The [`.job_workflow.yaml`](/jobs/job-templates) schema is generated separately by the `skilled_workflow` package's own `schema:generate` (it writes `packages/_skillet_workflow/data/schemas/job_workflow.schema.json`).
 
 ## Check the schema is in sync
 
@@ -34,7 +33,7 @@ Install the [Red Hat YAML extension](https://marketplace.visualstudio.com/items?
     "./packages/_skillet_agent/data/schemas/skilled_crew.schema.json": [
       "**/*.skilled_crew.yaml"
     ],
-    "./packages/_skillet_agent/data/schemas/job_workflow.schema.json": [
+    "./packages/_skillet_workflow/data/schemas/job_workflow.schema.json": [
       "**/*.job_workflow.yaml"
     ]
   }

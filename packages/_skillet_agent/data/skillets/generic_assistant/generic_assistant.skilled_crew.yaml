@@ -1,0 +1,21 @@
+version: "1.0"
+id: "generic_assistant"
+
+# A basic, single-agent crew: a general-purpose assistant with no skills, MCP
+# servers, or commands. It runs out of the box and doubles as a starting
+# template for your own crews.
+
+# Slash commands the user can invoke during chat. Uncomment to add one.
+# commands:
+#   - name: french
+#     filePath: ../../dot_claude/commands/french.command.md
+
+agents:
+  generic_assistant:
+    instructionsPath: ./AGENTS.md
+    # Grant the agent skills (each becomes a callable sub-agent) or MCP tools.
+    # skills:
+    #   - name: hackernews
+    #     folderPath: ../../dot_claude/skills/hackernews
+    # mcp_servers:
+    #   - filePath: ../../dot_claude/mcp_servers/datetime_mcp.json

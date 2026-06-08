@@ -137,18 +137,24 @@ So the skill's instructions tell the LLM *what* to do; the `run_command_line` to
 
 ## Where data lands
 
-Running the skillet creates an `outputs/` directory next to the source:
+Runtime state is resolved by [`SkilletPaths`](/api/classes/SkilletPaths). Running from a git checkout, it lands under a `.skilled-agent/` directory at the **repo root**, split into `state/`, `cache/`, and `config/`:
 
 ```
-outputs/
-├── .agent_sessions.sqlite          # OpenAI Agents SDK session state
-├── .agent_session_logs/            # JSONL replay logs per session
-│   └── user_cli/                   # default CLI userId
-│       └── session_<iso>_<rand>.jsonl
-├── .openai_cache.sqlite            # OpenAI response cache
-├── .openai_cost_tracker.sqlite     # Per-skillet cost tracking
-└── .skillet_jobs.sqlite            # Job board (created once you use the job lane)
+.skilled-agent/                      # repo root (development layout)
+├── state/
+│   ├── .agent_sessions.sqlite       # OpenAI Agents SDK session state
+│   ├── .openai_cost_tracker.sqlite  # per-skillet cost tracking
+│   ├── .user_store.sqlite           # the shared user store (CLI + web client)
+│   ├── .agent_session_logs/         # JSONL replay logs per session
+│   │   └── john_example_com/        # the default user, john@example.com (sanitized)
+│   │       └── session_<iso>_<rand>.jsonl
+│   └── .skillet_jobs.sqlite         # job board (created by the skilled_workflow package)
+├── cache/
+│   └── .openai_cache.sqlite         # OpenAI response cache (safe to delete)
+└── config/                          # your own crews, overlaying the bundled samples
 ```
+
+Installed via npm, these follow the XDG base directories instead (`~/.local/state/skilled-crew/`, `~/.cache/skilled-crew/`, `~/.config/skilled-crew/`); set `SKILLET_HOME` to pin all three under one base. There is no longer an `outputs/` directory.
 
 The `todo_list` skillet also writes its own `tasks.json` inside the agent folder (`data/dotclaude_todo_list/_data/tasks.json`). Real-world skillets persist data wherever their scripts choose.
 

@@ -38,7 +38,7 @@ The entry agent can hand off to any skill agent. Skill agents can hand back to t
 `AgentRunner.runOneShotAsyncGenerator(context, userInput)` is the entire runtime loop. For each user message:
 
 1. **Log the input.** The raw user input is appended to a JSONL session log (see [Sessions and logs](/concepts/sessions-and-logs)).
-2. **Slash-command check.** Built-in commands (`/help`, `/skills`, `/mcp_servers`, `/compact`, `/jobs`, `/show`, `/comment`, `/unblock`, `/exit`) short-circuit before the LLM runs. User-defined `.command.md` commands are expanded into a normal prompt. See [Slash commands](/cli/slash-commands).
+2. **Slash-command check.** Built-in commands (`/help`, `/skills`, `/mcp_servers`, `/compact`, `/exit`) short-circuit before the LLM runs, as do any external commands an outer layer injected (the [job lane](/jobs/overview) adds `/jobs`, `/show`, `/comment`, `/unblock`). User-defined `.command.md` commands are expanded into a normal prompt. See [Slash commands](/cli/slash-commands).
 3. **Run the entry agent.** The orchestrator either replies directly, calls a tool, or hands off to a skill agent.
 4. **Yield step events.** Each LLM action emits an event: `agent_start`, `agent_end`, `agent_tool_start`, `agent_tool_end`, `handoff`, or `text`. These stream out of the async generator so the CLI and web UI can render in real time.
 5. **Return the final result.** Once the agent says "done," the generator returns `{ text: string }` as the final result.
@@ -67,8 +67,8 @@ The orchestrator session is wrapped in `OpenAIResponsesCompactionSession` with a
 ## What's not in the runtime
 
 - **Agent code generation.** Skills are markdown + scripts. The LLM picks which script to run; it does not write the script itself.
-- **Long-running work inside a single turn.** A `chat`/`run` turn is request/response. For durable, multi-step, or scheduled background work, the runtime has a separate **job lane** — see [Jobs & Scheduling](/jobs/overview).
-- **State outside the session.** Skills persist whatever they want in their own folder (typically a JSON file under `_data/`). The runtime owns the session store, the cache, the cost tracker, and (for background work) the job board.
+- **Long-running work inside a single turn.** A `chat`/`run` turn is request/response. For durable, multi-step, or scheduled background work, there is a separate **job lane** — the `skilled_workflow` package, which embeds this runtime as a library. See [Jobs & Scheduling](/jobs/overview).
+- **State outside the session.** Skills persist whatever they want in their own folder (typically a JSON file under `_data/`). The agent runtime owns the session store, the cache, and the cost tracker; the job board is owned by the separate job-lane package.
 
 ## Next
 

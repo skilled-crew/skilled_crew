@@ -48,6 +48,11 @@ export class SkilletPaths {
 		return SkilletPaths._role('cache', 'XDG_CACHE_HOME', '.cache');
 	}
 
+	/** Sample crews shipped inside the package; read-only, ships in the npm tarball. */
+	static bundledConfigDir(): string {
+		return Path.join(PACKAGE_ROOT, 'data');
+	}
+
 	static agentSessionsDb(): string {
 		return Path.join(SkilletPaths.stateDir(), '.agent_sessions.sqlite');
 	}

@@ -4,7 +4,7 @@ title: Models
 
 # Models
 
-`skillet_agent` runs against any [OpenAI-compatible](https://platform.openai.com/docs/api-reference) endpoint. Two providers are wired today: **OpenAI** (the default) and **LMStudio** (a local OpenAI-compatible server). Models are named with the explicit `<provider>/<model>` convention so the runtime can route requests without guessing — see [`UtilsAi.parseProviderModel`](/api).
+`skillet_agent` runs against any [OpenAI-compatible](https://platform.openai.com/docs/api-reference) endpoint. Three providers are wired today: **OpenAI** (the default, hosted), **LMStudio**, and **Ollama** (both local OpenAI-compatible servers). Models are named with the explicit `<provider>/<model>` convention so the runtime can route requests without guessing — see [`UtilsAi.parseProviderModel`](/api). The full provider set is the fixed enum [`UtilsAi.SUPPORTED_PROVIDERS`](/api/classes/UtilsAi); an unknown provider prefix throws at startup.
 
 ## Picking a model
 
@@ -16,6 +16,10 @@ The runner looks for a model spec in this order (first hit wins):
 
 For the eval grader, the equivalent var is `SKILLET_MODEL_EVAL` (same fallback chain, same default).
 
+### Preflight check
+
+When `SKILLET_MODEL_RUNNER` is set, `chat`, `run`, and `eval_run` preflight it before the first model call and exit `1` with an actionable message if the provider can't be reached — no `OPENAI_API_KEY` for `openai`, or an unreachable local server for `lmstudio` / `ollama`. This fails fast instead of dying deep inside the first request. The probe is a `GET <baseURL>/models` bounded to 1.5 s; any HTTP response counts as reachable. When the variable is unset, the check is a no-op. See [`UtilsAi.checkModelRunnerRunnable`](/api/classes/UtilsAi).
+
 ## Model spec format
 
 Every model spec is `<provider>/<model>`. The string is split on the **first** `/`; everything after it is the model id passed verbatim to the OpenAI SDK. That lets LMStudio's own namespaced ids (like `liquid/lfm2-1.2b`) ride along:
@@ -26,6 +30,8 @@ Every model spec is `<provider>/<model>`. The string is split on the **first** `
 | `openai/gpt-4.1` | `openai` | `gpt-4.1` |
 | `lmstudio/liquid/lfm2-1.2b` | `lmstudio` | `liquid/lfm2-1.2b` |
 | `lmstudio/google/gemma-3-4b-it` | `lmstudio` | `google/gemma-3-4b-it` |
+| `ollama/llama3.2` | `ollama` | `llama3.2` |
+| `ollama/qwen3` | `ollama` | `qwen3` |
 
 Unknown providers or bare model names (no `/`) throw at startup with an actionable error.
 
@@ -37,8 +43,9 @@ Each provider has a default endpoint and an optional override:
 |---|---|---|
 | `openai` | OpenAI SDK default (`https://api.openai.com/v1`) | `OPENAI_BASE_URL` |
 | `lmstudio` | `http://localhost:1234/v1` | `LMSTUDIO_BASE_URL` |
+| `ollama` | `http://localhost:11434/v1` | `OLLAMA_BASE_URL` |
 
-Set the override when you want to point at a proxy, gateway, or remote LMStudio host. Both vars are optional; leave them unset to use the defaults.
+Set the override when you want to point at a proxy, gateway, or a remote LMStudio / Ollama host. All three vars are optional; leave them unset to use the defaults.
 
 ## OpenAI
 
@@ -75,6 +82,34 @@ The runtime hits `http://localhost:1234/v1` (or `LMSTUDIO_BASE_URL` if set) and 
 
 Tested LMStudio models include `lmstudio/liquid/lfm2-1.2b` and `lmstudio/google/gemma-3-4b-it`. Anything LMStudio loads and serves should work — the model id after `lmstudio/` is sent through unchanged.
 
+## Ollama
+
+[Ollama](https://ollama.com/) also exposes an OpenAI-compatible endpoint. Install it, pull a model, and start the server:
+
+```bash
+ollama pull llama3.2
+ollama serve          # serves http://localhost:11434
+```
+
+Then point the runtime at it:
+
+```bash
+export SKILLET_MODEL_RUNNER=ollama/llama3.2
+npm run dev:chat:todo_list
+```
+
+Or set the model in your `AGENTS.md`:
+
+```yaml
+---
+name: todo_list
+description: Todo list manager.
+model: ollama/llama3.2
+---
+```
+
+The runtime hits `http://localhost:11434/v1` (or `OLLAMA_BASE_URL` if set). No API key is required: the OpenAI SDK constructor refuses to start without one, so the `ollama` client ships a harmless placeholder key that Ollama ignores. As with LMStudio, cost-tracking entries are still written but the dollar amounts are zero. The model id after `ollama/` (e.g. `llama3.2`, `qwen3`) is sent through unchanged.
+
 ## Streaming
 
 Pass `-s` to `chat` or `run` to stream tokens. Both providers support it. The events that come out of the async generator are the same in both modes — streaming just emits `text` events incrementally as tokens arrive instead of in one chunk at the end.
@@ -87,8 +122,7 @@ npx tsx ./src/cli.ts chat -c ./data/skillets/todo_list.skilled_crew.yaml -s
 
 | | Status |
 |---|---|
-| Anthropic (Claude) | No adapter. The `anthropic/*` provider prefix is reserved by the convention but not wired. |
-| Google Gemini API (`generativelanguage.googleapis.com`) | No adapter. Run Gemini models locally through LMStudio with `lmstudio/google/<model>`. |
-| Ollama | No adapter, though Ollama exposes an OpenAI-compatible endpoint — a small custom adapter would work. |
+| Anthropic (Claude) | No native adapter. The `anthropic/*` provider prefix is not wired; reach Claude through an OpenAI-compatible gateway via the `openai` provider and `OPENAI_BASE_URL`. |
+| Google Gemini API (`generativelanguage.googleapis.com`) | No native adapter. Run Gemini models locally through LMStudio with `lmstudio/google/<model>`, or front the Gemini API with an OpenAI-compatible gateway. |
 
-If you want one of these, the adapter point is [`UtilsAi.parseProviderModel`](/api) and [`UtilsAi.getOpenAiClient`](/api). Add a new provider entry and another `baseURL`.
+Every provider must speak the OpenAI API — there is no plugin or config-file mechanism for new backends. Adding one means editing the `UtilsAi.SUPPORTED_PROVIDERS` enum and the `UtilsAi.PROVIDER_CLIENT_CONFIGS` client wiring (the base URL, its override env var, and an optional placeholder key); see [`UtilsAi`](/api/classes/UtilsAi) and [`UtilsAi.getOpenAiClient`](/api).

@@ -28,6 +28,8 @@ import { CliLogHelper } from './commands/cli_log_helper';
 import { CliSchemaHelper } from './commands/cli_schema_helper';
 import { CliUserHelper } from './commands/cli_user_helper';
 import { UserStore } from './libs/user_store';
+import { CrewResolver } from './libs/crew_resolver';
+import { UtilsAi } from './libs/utils_ai';
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -60,7 +62,9 @@ type LogStreamSubCmdOptions = {
 function sharedAgentRunOptions(command: Commander.Command): Commander.Command {
 	const defaultSessionName = `session_${new Date().toISOString()}_${Math.random().toString(16).slice(2)}`;
 	return command
-		.requiredOption('-c, --skilled-crew-yaml-config-path <path>', 'path to the .skilled_crew.yaml config file')
+		.option('-c, --skilled-crew-yaml-config-path <pathOrId>',
+			'path to a .skilled_crew.yaml file, or the skilletId of a bundled/user crew (default: todo_list)',
+			CrewResolver.DEFAULT_SKILLET_ID)
 		.option('-v, --verbose-level', 'increase verbosity (repeatable)', (_, previous: number) => previous + 1, 0)
 		.option('-s, --stream', 'stream response tokens as they arrive instead of waiting for the full response', false)
 		.option('--user-email <email>',
@@ -74,10 +78,27 @@ function sharedAgentRunOptions(command: Commander.Command): Commander.Command {
 /**
  * Resolve a `--user-email` value to the session userId, verifying the user
  * exists in the shared user store. The email IS the userId (one identity shared
- * with the web client). Exits with an error if no such user is found.
+ * with the web client). Seeds the default user first so a fresh checkout works
+ * on its first run (issue #261); still exits with an error if a non-default
+ * email is requested but absent.
  */
-function resolveUserIdFromEmail(userEmail: string): string {
+async function resolveUserIdFromEmail(userEmail: string): Promise<string> {
+	await CliUserHelper.ensureDefaultUser();
 	return CliUserHelper.requireUserByEmail(userEmail).email;
+}
+
+/**
+ * Fail fast when SKILLET_MODEL_RUNNER points at a provider this process cannot
+ * reach — no OPENAI_API_KEY, or a local lmstudio/ollama server that is not
+ * running. Prints an actionable message and exits 1 rather than letting the run
+ * die deep inside the first model call (#265). A no-op when the variable is unset.
+ */
+async function assertModelRunnerRunnableOrExit(): Promise<void> {
+	const problem = await UtilsAi.checkModelRunnerRunnable();
+	if (problem !== null) {
+		console.error(problem);
+		process.exit(1);
+	}
 }
 
 async function main() {
@@ -107,18 +128,20 @@ async function main() {
 		.command('chat')
 		.description('start an interactive chat REPL with the agent')
 	).action(async (_opts: unknown, cmd: Commander.Command) => {
+		await assertModelRunnerRunnableOrExit();
 		const options = cmd.optsWithGlobals() as ChatRunSubCmdOptions;
-		const userId = resolveUserIdFromEmail(options.userEmail);
+		const skilledCrewYamlConfigPath = CrewResolver.resolve(options.skilledCrewYamlConfigPath);
+		const userId = await resolveUserIdFromEmail(options.userEmail);
 		// create the agent runner context
 		const agentRunnerContext = await AgentRunnerInit.createAgentRunnerContext({
-			skilledCrewYamlConfigPath: options.skilledCrewYamlConfigPath,
+			skilledCrewYamlConfigPath: skilledCrewYamlConfigPath,
 			verboseLevel: options.verboseLevel,
 			userId: userId,
 			sessionName: options.sessionName,
 		});
 
 		// display a starting message with the session and user info
-		console.log(`Starting chat session "${options.sessionName}" for user "${userId}" with agent config "${options.skilledCrewYamlConfigPath}"`);
+		console.log(`Starting chat session "${options.sessionName}" for user "${userId}" with agent config "${skilledCrewYamlConfigPath}"`);
 
 		// display the current session history before starting the chat, so that the user can see the context of the conversation so far
 		console.log();
@@ -127,7 +150,7 @@ async function main() {
 			verboseLevel: options.verboseLevel,
 		});
 
-		const agentRunnerName = Path.basename(options.skilledCrewYamlConfigPath, '.skilled_crew.yaml');
+		const agentRunnerName = Path.basename(skilledCrewYamlConfigPath, '.skilled_crew.yaml');
 
 		// run the chat loop
 		await CliChatHelper.runChat(agentRunnerName, agentRunnerContext, {
@@ -152,14 +175,16 @@ async function main() {
 		.description('run a single one-shot task and exit')
 		.argument('<task>', 'the task to run')
 	).action(async (task: string, _opts: unknown, cmd: Commander.Command) => {
+		await assertModelRunnerRunnableOrExit();
 		const options = cmd.optsWithGlobals() as ChatRunSubCmdOptions;
-		const userId = resolveUserIdFromEmail(options.userEmail);
+		const skilledCrewYamlConfigPath = CrewResolver.resolve(options.skilledCrewYamlConfigPath);
+		const userId = await resolveUserIdFromEmail(options.userEmail);
 
-		console.log(`cli run for user "${userId}" with agent config "${options.skilledCrewYamlConfigPath}"`);
+		console.log(`cli run for user "${userId}" with agent config "${skilledCrewYamlConfigPath}"`);
 
 		// create the agent runner context
 		const agentRunnerContext = await AgentRunnerInit.createAgentRunnerContext({
-			skilledCrewYamlConfigPath: options.skilledCrewYamlConfigPath,
+			skilledCrewYamlConfigPath: skilledCrewYamlConfigPath,
 			verboseLevel: options.verboseLevel,
 			userId: userId,
 			sessionName: options.sessionName,
@@ -185,6 +210,26 @@ async function main() {
 
 	///////////////////////////////////////////////////////////////////////////////
 	///////////////////////////////////////////////////////////////////////////////
+	//	list
+	///////////////////////////////////////////////////////////////////////////////
+	///////////////////////////////////////////////////////////////////////////////
+
+	program
+		.command('list')
+		.description('list the skilletId of every bundled and user crew that -c can resolve by id')
+		.action(() => {
+			const crews = CrewResolver.listAvailable();
+			if (crews.length === 0) {
+				console.log('no crews found');
+				return;
+			}
+			for (const crew of [...crews].sort((crewA, crewB) => crewA.id.localeCompare(crewB.id))) {
+				console.log(`${crew.id}\t${crew.path}`);
+			}
+		});
+
+	///////////////////////////////////////////////////////////////////////////////
+	///////////////////////////////////////////////////////////////////////////////
 	//	eval_run
 	///////////////////////////////////////////////////////////////////////////////
 	///////////////////////////////////////////////////////////////////////////////
@@ -196,6 +241,7 @@ async function main() {
 		.requiredOption('-f, --eval-folder-path <path>', 'path to the eval folder containing evals.json')
 		.option('-v, --verbose-level', 'increase verbosity (repeatable)', (_: unknown, previous: number) => previous + 1, 0)
 		.action(async (_opts: unknown, cmd: Commander.Command) => {
+			await assertModelRunnerRunnableOrExit();
 			const options = cmd.optsWithGlobals() as EvalRunSubCmdOptions;
 			await CliEvalHelper.run(options);
 		});
@@ -223,7 +269,7 @@ async function main() {
 
 	const logCommand = program
 		.command('log')
-		.description('inspect session logs written under outputs/.agent_session_logs');
+		.description('inspect session logs under the agent state dir (.skilled-agent/state/.agent_session_logs in a checkout, or the XDG state dir when installed)');
 
 	logCommand
 		.command('stream')
@@ -258,6 +304,23 @@ async function main() {
 		.description('verify the committed JSON schemas match their Zod sources; exits non-zero if out of sync')
 		.action(async () => {
 			await CliSchemaHelper.check();
+		});
+
+	///////////////////////////////////////////////////////////////////////////////
+	///////////////////////////////////////////////////////////////////////////////
+	//	postinstall
+	///////////////////////////////////////////////////////////////////////////////
+	///////////////////////////////////////////////////////////////////////////////
+
+	// TEMPORARY (issue #261): invoked from the package's npm `postinstall` hook so
+	// a fresh install has the default user ready on first run. Most users do not
+	// realise the agent is multi-user, so this gives them a usable identity without
+	// a manual seed step. Remove once real onboarding exists.
+	program
+		.command('postinstall')
+		.description('seed the default user so a fresh install works on first run (temporary, issue #261)')
+		.action(async () => {
+			await CliUserHelper.ensureDefaultUser();
 		});
 
 	///////////////////////////////////////////////////////////////////////////////

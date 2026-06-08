@@ -59,10 +59,11 @@ Run `npx skilled_crew help <command>` to see the flags for any command.
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `OPENAI_API_KEY` | yes (for `openai/*` models) | — | API key read by the OpenAI SDK in [src/libs/utils_ai.ts](src/libs/utils_ai.ts). Not needed when running `lmstudio/*` models, which hit `LMSTUDIO_BASE_URL` (default `http://localhost:1234/v1`). |
+| `OPENAI_API_KEY` | yes (for `openai/*` models) | — | API key read by the OpenAI SDK in [src/libs/utils_ai.ts](src/libs/utils_ai.ts). Not needed when running `lmstudio/*` models (hit `LMSTUDIO_BASE_URL`, default `http://localhost:1234/v1`) or `ollama/*` models (hit `OLLAMA_BASE_URL`, default `http://localhost:11434/v1`). |
 | `OPENAI_BASE_URL` | no | OpenAI SDK default | Override the base URL for the `openai` provider. Useful for OpenAI-compatible proxies or gateways. |
 | `LMSTUDIO_BASE_URL` | no | `http://localhost:1234/v1` | Override the base URL for the `lmstudio` provider. Point at a remote LMStudio host if needed. |
-| `SKILLET_MODEL_RUNNER` | no | falls back to `agents.header.model` from the runner YAML, then `openai/gpt-4.1-nano` | Overrides the model used by the runner (triage + skill agents). Format is `<provider>/<model>`. Supported providers: `openai`, `lmstudio`. OpenAI examples: `openai/gpt-4.1-nano`, `openai/gpt-4.1-mini`, `openai/gpt-4.1`. LMStudio examples: `lmstudio/liquid/lfm2-1.2b`, `lmstudio/google/gemma-3-4b-it`. See [src/agent_runner/agent_runner_init.ts](src/agent_runner/agent_runner_init.ts). |
+| `OLLAMA_BASE_URL` | no | `http://localhost:11434/v1` | Override the base URL for the `ollama` provider. Point at a remote Ollama host if needed. No API key required. |
+| `SKILLET_MODEL_RUNNER` | no | falls back to `agents.header.model` from the runner YAML, then `openai/gpt-4.1-nano` | Overrides the model used by the runner (triage + skill agents). Format is `<provider>/<model>`. Supported providers: `openai`, `lmstudio`, `ollama`. OpenAI examples: `openai/gpt-4.1-nano`, `openai/gpt-4.1-mini`, `openai/gpt-4.1`. LMStudio examples: `lmstudio/liquid/lfm2-1.2b`, `lmstudio/google/gemma-3-4b-it`. Ollama examples: `ollama/llama3.2`, `ollama/qwen3`. See [src/agent_runner/agent_runner_init.ts](src/agent_runner/agent_runner_init.ts). |
 | `SKILLET_MODEL_EVAL` | no | `openai/gpt-4.1-nano` | Overrides the model used by the LLM-as-judge eval grader. Same `<provider>/<model>` format as `SKILLET_MODEL_RUNNER`. See [src/evals/eval_grader.ts](src/evals/eval_grader.ts). |
 
 ---
