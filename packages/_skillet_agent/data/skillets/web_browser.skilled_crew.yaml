@@ -1,0 +1,21 @@
+version: "1.0"
+id: "web_browser"
+
+commands:
+  - name: french
+    filePath: ../dot_claude/commands/french.command.md
+  - name: caveman
+    filePath: ../dot_claude/commands/caveman.command.md
+
+agents:
+  web_browser:
+    instructionsPath: ../dot_claude/agents/web_browser.md
+    mcp_servers:
+      - filePath: ../dot_claude/mcp_servers/datetime_mcp.json
+      - filePath: ../dot_claude/mcp_servers/chrome_devtools.json
+    # skills:
+    #   - name: chrome-devtools-cli
+    #     folderPath: ../dot_claude/skills/chrome-devtools-cli
+    skills:
+      - name: fastweb
+        folderPath: ../../../../packages/fastweb_mcp/tmp/.claude/skills/fastweb

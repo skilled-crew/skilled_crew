@@ -1,0 +1,64 @@
+---
+title: JSON Schema (VSCode)
+---
+
+# JSON Schema (VSCode)
+
+`SkilledCrewYamlConfigZod` (the Zod schema in [`src/config/skilled_crew_yaml/skilled_crew_yaml_zod.ts`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/src/config/skilled_crew_yaml/skilled_crew_yaml_zod.ts)) is the source of truth for `.skilled_crew.yaml`. The CLI can serialize it as a JSON Schema so editors can offer autocomplete, hover docs, and inline validation while you write a skillet.
+
+## Generate the schemas
+
+```bash
+npm run schema:generate
+# writes packages/_skillet_agent/data/schemas/skilled_crew.schema.json
+#    and packages/_skillet_agent/data/schemas/job_workflow.schema.json
+```
+
+`schema_generate` emits **two** schemas: one for `.skilled_crew.yaml` (from `SkilledCrewYamlConfigZod`) and one for [`.job_workflow.yaml`](/jobs/job-templates) (from `JobTemplateConfigZod`). Re-run this whenever you change either Zod source. Both files are committed so reviewers see schema changes alongside source changes.
+
+## Check the schema is in sync
+
+```bash
+npm run schema:check
+```
+
+This re-serializes the Zod schema and compares it to the committed JSON. Exits non-zero if they differ. Wire it into a pre-commit hook or CI step so a stale schema can't slip in.
+
+## VSCode setup
+
+Install the [Red Hat YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) and tell it where the schema lives. Add to your workspace `.vscode/settings.json`:
+
+```json
+{
+  "yaml.schemas": {
+    "./packages/_skillet_agent/data/schemas/skilled_crew.schema.json": [
+      "**/*.skilled_crew.yaml"
+    ],
+    "./packages/_skillet_agent/data/schemas/job_workflow.schema.json": [
+      "**/*.job_workflow.yaml"
+    ]
+  }
+}
+```
+
+That's all — opening any `*.skilled_crew.yaml` now gives you:
+
+- Autocomplete for top-level keys (`version`, `id`, `agents`, ...) and nested keys.
+- Hover docs lifted straight from the Zod `.describe()` calls.
+- Red squigglies on extra keys (the schema is strict) and on bad types.
+
+## Other editors
+
+The schema is plain JSON Schema draft 2020-12. Any editor with a JSON-Schema-aware YAML plugin works the same way — point it at the schema file and a glob for `*.skilled_crew.yaml`.
+
+For programmatic validation outside an editor, you can validate with any JSON Schema library, or import `SkilledCrewYamlConfigZod` directly:
+
+```ts
+import { SkilledCrewYamlConfigZod } from 'skillet_agent/src/config/skilled_crew_yaml/skilled_crew_yaml_zod';
+
+const parsed = SkilledCrewYamlConfigZod.parse(rawYamlObject);
+```
+
+## How the generation works
+
+The `schema_generate` CLI command lives in [`src/commands/cli_schema_helper.ts`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/src/commands/cli_schema_helper.ts). It serializes the Zod schema with `zod.toJSONSchema(..., { io: 'input' })`. The `io: 'input'` flag treats fields with defaults as optional, which matches how operators actually write `.skilled_crew.yaml` files.

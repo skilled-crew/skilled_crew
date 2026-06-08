@@ -1,0 +1,97 @@
+---
+title: MCP servers
+---
+
+# MCP servers
+
+A skillet can attach **[Model Context Protocol](https://modelcontextprotocol.io)** servers to any agent. Each MCP server contributes a set of tools the LLM can call alongside the built-in `run_command_line` and `load_skill_resources`. Three transports are supported: `stdio` (the runtime spawns a subprocess), `http`, and `sse`.
+
+Each server is one JSON file. Reference it from `.skilled_crew.yaml` under the agent that should have access.
+
+## Wiring
+
+```yaml
+# .skilled_crew.yaml
+agents:
+  my_agent:
+    instructionsPath: ../my_bot/AGENTS.md
+    mcp_servers:
+      - filePath: ../dot_claude/mcp_servers/datetime_mcp.json
+      - filePath: ../dot_claude/mcp_servers/chrome_devtools.json
+    skills: [...]
+```
+
+The path is relative to the `.skilled_crew.yaml`. Each entry is a single config file. MCP servers are scoped per-agent — only the agent that lists a server gets its tools.
+
+## `stdio` config
+
+Subprocess over stdin/stdout. Most MCP servers ship this way.
+
+```json
+{
+  "name": "datetime_mcp",
+  "type": "stdio",
+  "command": "npx",
+  "args": [
+    "tsx",
+    "/absolute/path/to/datetime_mcp/src/index.ts"
+  ],
+  "env": {
+    "MY_VAR": "value"
+  },
+  "cwd": "/optional/working/dir"
+}
+```
+
+| Field | Required | Purpose |
+|---|---|---|
+| `name` | yes | Display name. Surfaces in `/mcp_servers`. |
+| `type` | yes | `"stdio"`. |
+| `command` | yes | Executable to spawn. |
+| `args` | no | CLI args, defaulting to `[]`. |
+| `env` | no | Extra env vars, merged onto the parent process env. |
+| `cwd` | no | Working directory for the subprocess. |
+
+## `http` config
+
+Streamable HTTP transport — for a server you run separately and reach over the network.
+
+```json
+{
+  "name": "my-api",
+  "type": "http",
+  "url": "http://localhost:3000/mcp"
+}
+```
+
+## `sse` config
+
+Server-Sent Events transport.
+
+```json
+{
+  "name": "my-api",
+  "type": "sse",
+  "url": "http://localhost:3000/sse"
+}
+```
+
+## Lifecycle
+
+All declared MCP servers are connected **before** the agent starts handling requests. Stdio servers stay running for the duration of the CLI process. The `/mcp_servers` built-in slash command in chat lists what's attached and shows each server's tools.
+
+## Sample servers
+
+Real configs ship under [`packages/_skillet_agent/data/dot_claude/mcp_servers/`](https://github.com/skilled-crew/skilled_crew/tree/main/packages/_skillet_agent/data/dot_claude/mcp_servers):
+
+- `datetime_mcp.json` — local stdio server from the [`datetime_mcp`](https://github.com/skilled-crew/skilled_crew/tree/main/packages/datetime_mcp) sibling package.
+- `chrome_devtools.json` — npm-published stdio server (`chrome-devtools-mcp`).
+
+## Picking which agent gets which server
+
+Two patterns work in practice:
+
+- **Everything on the entry agent.** Simplest. The orchestrator has every tool, and skills compose with shell commands. Fine until you have many MCP servers and want the LLM to focus.
+- **Servers on the relevant skill's parent agent in a multi-agent skillet.** Heavier setup, but the LLM only sees tools that matter for the current step.
+
+There's no global "all agents get this server" shortcut — list the server under each agent that should have it.

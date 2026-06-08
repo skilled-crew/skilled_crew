@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+.next/
+*.tsbuildinfo
+
+# macOS
+.DS_Store
+
+# Environment variables
+.env
+
+# Runtime data — dev resolves SkilletPaths to <repo>/.skilled-agent
+/.skilled-agent/

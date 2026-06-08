@@ -1,0 +1,26 @@
+version: "1.0"
+id: "todo_list"
+
+# enable this if you want to run the skill scripts in a container, make sure to update the dockerfile path
+# script_runtime:
+#   kind: container
+#   dockerfile: ../dotclaude_todo_list/Dockerfile
+
+commands:
+  - name: french
+    filePath: ../dot_claude/commands/french.command.md
+
+agents:
+  todo_list_agent:
+    instructionsPath: ../dotclaude_todo_list/AGENTS.md
+    # mcp_servers:
+    #   - filePath: ../dot_claude/mcp_servers/datetime_mcp.json
+    skills:
+      - name: complete-task
+        folderPath: ../dotclaude_todo_list/skills/complete-task
+      - name: create-task
+        folderPath: ../dotclaude_todo_list/skills/create-task
+      - name: delete-task
+        folderPath: ../dotclaude_todo_list/skills/delete-task
+      - name: list-tasks
+        folderPath: ../dotclaude_todo_list/skills/list-tasks

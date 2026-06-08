@@ -1,0 +1,173 @@
+---
+title: Run your first skillet
+---
+
+# Run your first skillet
+
+The repo ships several sample skillets under [`packages/_skillet_agent/data/skillets/`](https://github.com/skilled-crew/skilled_crew/tree/main/packages/_skillet_agent/data/skillets). The simplest is `todo_list` — four skills (create, list, complete, delete) that operate on a JSON file. This page walks through every file involved.
+
+## Run it
+
+From `packages/_skillet_agent/`:
+
+```bash
+npm run dev:chat:todo_list
+```
+
+You'll get an interactive prompt:
+
+```
+> Add "buy milk" to my todo list
+Task created: buy milk
+1. [ ] buy milk
+
+> What's on my list?
+1. [ ] buy milk
+
+> Done with that one
+1. [x] buy milk
+
+> /exit
+```
+
+Behind the scenes that command resolves to:
+
+```bash
+npx tsx ./src/cli.ts chat -c ./data/skillets/todo_list.skilled_crew.yaml
+```
+
+For a single non-interactive task, use `dev:run:todo_list` (or `run` instead of `chat`).
+
+## The skillet YAML
+
+A **skillet** is one YAML file that declares which agents exist and which skills each agent can use. The whole `todo_list` definition is twelve meaningful lines:
+
+```yaml
+# data/skillets/todo_list.skilled_crew.yaml
+version: "1.0"
+id: "todo_list"
+
+commands:
+  - name: french
+    filePath: ../dot_claude/commands/french.command.md
+
+agents:
+  todo_list_agent:
+    instructionsPath: ../dotclaude_todo_list/AGENTS.md
+    skills:
+      - name: complete-task
+        folderPath: ../dotclaude_todo_list/skills/complete-task
+      - name: create-task
+        folderPath: ../dotclaude_todo_list/skills/create-task
+      - name: delete-task
+        folderPath: ../dotclaude_todo_list/skills/delete-task
+      - name: list-tasks
+        folderPath: ../dotclaude_todo_list/skills/list-tasks
+```
+
+- `id` is used to namespace session data, cache entries, and cost-tracking buckets on disk.
+- `agents` is a map of agent name → definition. With only one entry, that agent is the entry point. With multiple, set `entryPointAgent` explicitly.
+- Each skill references a folder containing a `SKILL.md` plus any scripts it needs.
+- `commands` lists user-defined slash commands available in `chat` mode.
+
+Full schema in [Configuration › .skilled_crew.yaml](/configuration/skilled-crew-yaml).
+
+## The AGENTS.md
+
+The orchestrator's prose lives at `instructionsPath`. It tells the LLM how to triage incoming requests to the right skill:
+
+```markdown
+---
+name: todo_list
+description: "Manages a todo list. Handles creating, listing, completing, and deleting tasks."
+model: 'openai/gpt-5.4-nano'
+---
+
+# Todo List Agent
+
+You are an orchestrating agent for a todo list system. Your job is to
+interpret the user's intent and route it to the correct skill sub-agent.
+
+## Routing Rules
+
+- Add/record/remember something → `create-task`
+- See/check/review tasks → `list-tasks`
+- Mark done/finish/check off → `complete-task`
+- Remove/delete/discard → `delete-task`
+
+## Response Format
+
+- After a write operation: confirm in one sentence, then show the updated list.
+- Keep responses short. No filler.
+```
+
+The frontmatter `model:` line is one of three places the runner picks up a model name (env override > `AGENTS.md` > built-in default). Body markdown becomes the system prompt for the orchestrator agent.
+
+## A skill
+
+Each skill is a folder with a `SKILL.md` and optionally scripts the skill can invoke. The `create-task` skill is one markdown file:
+
+```markdown
+---
+name: create-task
+description: Create a new task in the user's todo list.
+---
+
+# Create Task Skill
+
+This skill adds a new task to the user's todo list. Each task is assigned a
+unique auto-incrementing ID and starts with an incomplete status.
+
+## Operation
+
+    npx tsx ../../_src/todo_script.ts create <description>
+
+## When to Use
+
+Use this skill when the user wants to add a new item to their todo list.
+Do NOT use this skill to view, complete, or remove tasks — use the
+`list-tasks`, `complete-task`, or `delete-task` skills for those.
+```
+
+A skill agent is created with two built-in tools:
+- `run_command_line` — execute a shell command with `cwd` set to the skill folder (30 s timeout).
+- `load_skill_resources` — read additional markdown from a `references/` subfolder, if the skill has one.
+
+So the skill's instructions tell the LLM *what* to do; the `run_command_line` tool gives it the means.
+
+## Where data lands
+
+Running the skillet creates an `outputs/` directory next to the source:
+
+```
+outputs/
+├── .agent_sessions.sqlite          # OpenAI Agents SDK session state
+├── .agent_session_logs/            # JSONL replay logs per session
+│   └── user_cli/                   # default CLI userId
+│       └── session_<iso>_<rand>.jsonl
+├── .openai_cache.sqlite            # OpenAI response cache
+├── .openai_cost_tracker.sqlite     # Per-skillet cost tracking
+└── .skillet_jobs.sqlite            # Job board (created once you use the job lane)
+```
+
+The `todo_list` skillet also writes its own `tasks.json` inside the agent folder (`data/dotclaude_todo_list/_data/tasks.json`). Real-world skillets persist data wherever their scripts choose.
+
+See [Sessions and logs](/concepts/sessions-and-logs) for what each runtime file is for and [Caching and cost](/concepts/caching-and-cost) for the cost-watch UI.
+
+## Glossary
+
+A few terms you'll see repeatedly in these docs:
+
+| Term | Meaning |
+|---|---|
+| **Skillet** | A `.skilled_crew.yaml` file plus everything it references — one runnable agent system. |
+| **Agent** | One LLM personality wired to a set of tools. Skillets always have at least one (the orchestrator). |
+| **Skill** | A folder with `SKILL.md` and scripts. The runtime creates one sub-agent per skill at startup. |
+| **Command** | A user-defined slash command (`.command.md`) the operator can type in chat mode. |
+| **Skill agent** | A sub-agent the orchestrator hands off to. Has the `run_command_line` and `load_skill_resources` tools. |
+
+## Next
+
+- [Architecture](/concepts/architecture) — how the orchestrator and skill agents pass work back and forth.
+- [Configuration › .skilled_crew.yaml](/configuration/skilled-crew-yaml) — every key in the YAML.
+- [Configuration › SKILL.md](/configuration/skill-md) — every frontmatter field and the `allowed-tools` syntax.

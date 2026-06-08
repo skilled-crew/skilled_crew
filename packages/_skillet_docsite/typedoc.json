@@ -1,0 +1,23 @@
+{
+    "$schema": "https://typedoc.org/schema.json",
+    "entryPoints": ["../_skillet_agent/src/index.ts"],
+    "tsconfig": "../_skillet_agent/tsconfig.json",
+    "plugin": ["typedoc-plugin-markdown"],
+    "out": "./content/api",
+    "excludeInternal": true,
+    "excludePrivate": true,
+    "intentionallyNotExported": [
+        "__object.AGENT_START",
+        "__object.AGENT_END",
+        "__object.AGENT_TOOL_START",
+        "__object.AGENT_TOOL_END",
+        "__object.HANDOFF",
+        "__object.TEXT"
+    ],
+    "readme": "none",
+    "hidePageHeader": true,
+    "hideBreadcrumbs": true,
+    "entryFileName": "index.mdx",
+    "fileExtension": ".mdx",
+    "publicPath": "/api/"
+}

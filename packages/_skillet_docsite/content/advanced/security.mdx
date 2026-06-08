@@ -1,0 +1,69 @@
+---
+title: Security
+---
+
+# Security
+
+`run_command_line` runs arbitrary shell commands. The runtime applies two layers of guardrails before each call: a **structural check** that blocks dangerous shell constructs, and an optional **`allowed-tools` allowlist** declared per-skill.
+
+These guardrails reduce the blast radius if the LLM goes off-script. They are not a sandbox. For real isolation, run with `script_runtime: container` ([Container runtime](/advanced/container-runtime)).
+
+Both checks run by default on every `run_command_line` call. They can be disabled for local debugging by setting `SKILLET_BYPASS_SECURITY=1`, which skips the structural check and the `allowed-tools` allowlist (the 30 s timeout and `cwd = skill folder` still apply). Leave it unset in production — it exists only to unblock local testing.
+
+Source: [`src/script_runner/script_runner_security.ts`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/src/script_runner/script_runner_security.ts).
+
+## Structural check
+
+Every command goes through `ScriptRunnerSecurity.checkCommandSecurity` first. It rejects:
+
+| Pattern | Why |
+|---|---|
+| `&&` `\|\|` `\|` `;` | Command chaining. One call, one command. |
+| `$()` | Command substitution. |
+| Backticks `` ` `` | Command substitution (legacy form). |
+| Newlines | Multi-line commands. |
+| `..` in any token | Path traversal. |
+| Absolute paths outside the skill folder | Cross-skill or system access. |
+
+If the LLM emits any of these, the call throws before the shell runs. The LLM gets the error message back and typically tries something simpler on the next turn.
+
+Two practical implications:
+
+- **No pipelines.** If you need to pipe, put the pipeline inside a script in `scripts/` and have the skill run the script as one command.
+- **No `cd`.** `cwd` is always the skill folder. Skills that need to operate elsewhere should pass paths relative to the skill folder.
+
+## `allowed-tools`
+
+A skill can further restrict its own commands via `allowed-tools` in `SKILL.md` frontmatter:
+
+```yaml
+---
+name: git-stats
+description: Report git statistics on the current repo.
+allowed-tools: Bash(git:*)
+---
+```
+
+Each pattern has the form `Bash(<command>:*)`. The runtime checks that the command line starts with `<command> ` and rejects everything else. Multiple patterns are space-separated:
+
+```yaml
+allowed-tools: Bash(git:*) Bash(jq:*)
+```
+
+Means the skill can call `git ...` or `jq ...` but nothing else.
+
+## What's not implemented
+
+- **Non-`Bash` tools.** Only the `Bash(<command>:*)` form is supported. A `Read`, `Write`, or bare-`Bash` token in `allowed-tools` is **not** silently ignored — `checkAllowedTools` throws `Unsupported tool: <name>`. Keep `allowed-tools` to `Bash(...)` patterns.
+- **Argument-level restrictions.** `Bash(git:*)` lets the LLM call `git push --force` if it wants to. The `*` is wildcard for arguments; there's no per-argument filter.
+- **Environment scrubbing.** Skills inherit the parent process env (including `OPENAI_API_KEY`). Don't put secrets in your shell env if you don't want your skills to see them.
+
+## Recommended defaults
+
+- **Set `allowed-tools` on every skill that doesn't need general shell.** A todo-list skill should declare `Bash(node:*)` or `Bash(npx:*)` and call it a day.
+- **Run in container** when running untrusted skillets or skillets that touch the network. The structural check + `allowed-tools` are defense-in-depth, not a security boundary.
+- **Don't bind-mount your home directory** into the container. The default mounts only the agent folder; keep it that way unless you have a specific reason otherwise.
+
+## Reporting
+
+If you find a way around either guardrail, please open a [security issue](https://github.com/skilled-crew/skilled_crew/issues) on the repository.

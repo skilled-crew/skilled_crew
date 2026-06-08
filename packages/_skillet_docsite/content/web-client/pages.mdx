@@ -1,0 +1,44 @@
+---
+title: Pages
+---
+
+# Pages
+
+The front-end is a set of independent pages under `public/`, each bundled separately by Vite. Agents are exposed through a small set of **presets** (each maps a short `agentKey` to a `.skilled_crew.yaml` under `_skillet_agent`): `todo_list`, `bluesky_social_manager`, `business_analyst`, `web_browser`, and `crew_news_brief`.
+
+## Landing, Login
+
+- **Landing (`/`)** — public marketing page with a nav to the docs, pricing, and Sign In.
+- **Login (`/login/`)** — email/password form; on success redirects to the profile. The Google button is shown only when OAuth is configured. There is no self-registration page; local accounts are provisioned server-side (see [authentication](/web-client/authentication)).
+
+## Profile
+
+`/profile/` is the signed-in home. It lists one link per non-empty agent preset, each opening that agent in chat (`/chat/<agentKey>`), plus nav to the inbox, schedules, job board, and the OpenAPI viewer.
+
+## Chat
+
+`/chat/:agentName` is the core conversational UI. It creates a [session](/concepts/sessions-and-logs) for the preset named in the URL and streams the agent's reply token-by-token over SSE. Features:
+
+- **Markdown rendering** of agent output (with syntax highlighting).
+- **Attachments** — drag-drop, paste, or pick images/files (up to 5 files, ~20 MB each), sent as a multimodal message.
+- **Voice input** via the browser's Web Speech API.
+- **Input history** (Shift+↑/↓) and a **thread sidebar** listing your saved sessions, with replay and delete.
+- **Model picker** (persisted in `localStorage`), validated against the server's [available models](/web-client/api).
+- **URL modes:** `?session_name=<name>` replays a past conversation; `?watch_job=<id>` streams a running [job](/jobs/overview) live without creating a new session (this is what the job board's "Watch" button opens).
+
+## Inbox
+
+`/inbox/` is your personal results feed — scoped to your own jobs (`/api/jobs?mine=true`). Each row expands to show the latest run's deliverable (rendered markdown), the conversation and comments, a reply box, **Redo** (re-queue with feedback), and **Archive**. It polls roughly once a second, standing down while you're mid-interaction.
+
+## Job board
+
+`/job_board/` is an **admin-only** Kanban over every user's jobs. Columns are the job [statuses](/jobs/overview#job-lifecycle) (`triage` → `archived`); cards show per-job cost and schedule origin. A detail modal exposes the body, run history, lifecycle events, comments, parent results, and any downloadable artifact. Actions include Watch/Replay (opens chat in `?watch_job` mode), Unblock, Redo, Archive, Delete, and a "Clear board" danger zone. A read-only indicator polls the [dispatcher](/jobs/dispatcher) status so you can see at a glance whether the queue is being processed.
+
+## Schedules
+
+`/schedules/` is CRUD for recurring [schedules](/jobs/schedules). The list has an enable/disable switch, Run-now, Edit, an inline view of the jobs each schedule has spawned, and Delete. The create/edit modal reuses a template picker (from `/api/templates`) and a shared cadence widget (Daily / Weekly / Monthly / Hourly / Minutely with time and day selectors).
+
+## Pricing & OpenAPI
+
+- **Pricing (`/pricing/`)** — a static calculator (per-crew pricing, yearly discount, trial). Stripe links are placeholders until configured.
+- **OpenAPI (`/openapi/`)** — renders the bundled `openapi.yaml` describing the [HTTP API](/web-client/api).

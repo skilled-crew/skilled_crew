@@ -1,0 +1,148 @@
+---
+title: Commands
+---
+
+# CLI commands
+
+The CLI is one binary (`skillet_agent`, or `npx tsx ./src/cli.ts <subcommand>` in dev). Run any subcommand directly or through the bundled npm scripts.
+
+## Quick reference
+
+| Subcommand | Purpose |
+|---|---|
+| [`chat`](#chat) | Interactive REPL with the agent. |
+| [`run <task>`](#run) | One-shot task; exits after the agent replies. |
+| [`eval_run`](#eval_run) | Run an [eval](/evaluations) suite against an agent. |
+| [`eval_grade`](#eval_grade) | Grade eval results with an LLM judge. |
+| [`schema_generate`](#schema_generate) | Emit the JSON Schemas for `.skilled_crew.yaml` and `.job_workflow.yaml`. |
+| [`schema_check`](#schema_check) | Verify the committed schemas are in sync with the Zod source. |
+| [`log stream`](#log-stream) | Print and then follow the JSONL session logs. |
+| [`jobs …`](/jobs/cli) | Manage the [job lane](/jobs/overview): create, list, cost, dispatcher, schedules. |
+
+## Shared flags
+
+`chat` and `run` accept the same set of flags:
+
+| Flag | Required | Default | Purpose |
+|---|---|---|---|
+| `-c, --skilled-crew-yaml-config-path <path>` | yes | — | Path to the `.skilled_crew.yaml` file. |
+| `-v, --verbose-level` | no | `0` | Repeatable. Each `-v` increases verbosity. `-vv` shows tool calls; `-vvv` shows raw step events. |
+| `-s, --stream` | no | `false` | Stream tokens as they arrive instead of waiting for the full response. |
+| `--user-id <userId>` | no | `user_cli` | Scopes the session store, JSONL log, and cost bucket. |
+| `--session-name <name>` | no | `session_<ISO timestamp>_<random>` | Scopes a single conversation within a user. Repeated runs with the same `--session-name` continue the same context. |
+| `--job-id <jobId>` | no | — | Marks the process as a [job-lane](/jobs/overview) worker (sets `SKILLET_JOB_ID`). The [dispatcher](/jobs/dispatcher) sets this when it spawns workers; you rarely pass it by hand. |
+
+## `chat`
+
+```bash
+npx tsx ./src/cli.ts chat -c ./data/skillets/todo_list.skilled_crew.yaml
+```
+
+Starts a readline REPL. The prompt shows the skillet name. Existing session history is replayed before the first prompt so you can see prior context.
+
+- Type a message to send it to the agent.
+- Type a `/` command — built-in ([slash commands reference](/cli/slash-commands)) or user-defined ([`.command.md`](/configuration/command-md)) — for slash behavior.
+- Hit `Ctrl+C` or type `/exit` to quit. MCP connections are closed cleanly on exit.
+
+## `run`
+
+```bash
+npx tsx ./src/cli.ts run -c ./data/skillets/todo_list.skilled_crew.yaml 'what are my tasks?'
+```
+
+Sends one task, prints the response, exits. Useful for scripting, cron jobs, or quick smoke tests. Same flags as `chat`. Streaming works (`-s`).
+
+## `eval_run`
+
+```bash
+npx tsx ./src/cli.ts eval_run \
+  -c ./data/skillets/bluesky_social_manager.skilled_crew.yaml \
+  -f ./data/skillets/evals/bluesky_evals
+```
+
+Runs every eval in `<eval-folder>/evals.json` against the skillet. Writes one `eval_<id>_run.json` per eval into the sibling `<eval-folder>_output/` directory. See [Evaluations](/evaluations).
+
+| Flag | Required | Purpose |
+|---|---|---|
+| `-c, --skilled-crew-yaml-config-path <path>` | yes | The skillet to evaluate. |
+| `-f, --eval-folder-path <path>` | yes | Folder containing `evals.json`; results go to the sibling `<folder>_output/`. |
+| `-v, --verbose-level` | no | Same semantics as for `chat` / `run`. |
+
+## `eval_grade`
+
+```bash
+npx tsx ./src/cli.ts eval_grade -f ./data/skillets/evals/bluesky_evals
+```
+
+Reads the `eval_<id>_run.json` files from a prior `eval_run` and grades each eval with an LLM judge (default `openai/gpt-4.1-nano`, overridable with `SKILLET_MODEL_EVAL` in `<provider>/<model>` form). Writes `eval_<id>_grade.json` back into the same `<eval-folder>_output/` directory. Scores run 0–10.
+
+| Flag | Required | Purpose |
+|---|---|---|
+| `-f, --eval-folder-path <path>` | yes | Folder containing the eval suite and its `evals_output/`. |
+
+## `schema_generate`
+
+```bash
+npx tsx ./src/cli.ts schema_generate
+```
+
+Serializes the Zod schemas to JSON Schema: `SkilledCrewYamlConfigZod` → `data/schemas/skilled_crew.schema.json` and `JobTemplateConfigZod` → `data/schemas/job_workflow.schema.json`. Re-run when you change either Zod source. See [JSON Schema (VSCode)](/configuration/json-schema).
+
+## `schema_check`
+
+```bash
+npx tsx ./src/cli.ts schema_check
+```
+
+Regenerates both schemas in-memory and compares them to the committed files. Exits non-zero if they differ. This is wired into CI (`npm run schema:check`) so a stale schema can't slip in.
+
+## `log stream`
+
+```bash
+npx tsx ./src/cli.ts log stream
+```
+
+Discovers every `.jsonl` session log under `./outputs/.agent_session_logs` (override the root with `--logs-dir <path>`), prints the existing user/agent turns oldest-first, then follows new appends — across all sessions, including running [job](/jobs/overview) workers. See [Sessions and logs](/concepts/sessions-and-logs).
+
+## `jobs`
+
+The `jobs` command group manages the durable [job lane](/jobs/overview) — creating jobs from templates, listing the board, rolling up cost, running the dispatcher, and managing recurring schedules:
+
+```bash
+npx tsx ./src/cli.ts jobs list
+npx tsx ./src/cli.ts jobs create -t ./data/crew_news_brief/crew_news_brief.job_workflow.yaml --input '{"topic":"rust web frameworks"}'
+npx tsx ./src/cli.ts jobs dispatcher --tick-interval-ms 1000
+```
+
+The full command tree (`create`, `list`, `cost`, `show`, `comment`, `unblock`, `clear`, `dispatcher`, and the `schedules` subgroup) is documented in [Jobs & Scheduling › CLI reference](/jobs/cli).
+
+## npm script shortcuts
+
+The package ships a few common invocations as npm scripts:
+
+```bash
+npm run dev:chat:todo_list                 # chat with todo_list skillet
+npm run dev:run:todo_list                  # one-shot: "what are my tasks?"
+npm run dev:chat:bluesky_social_manager    # chat with the bluesky skillet
+npm run dev:chat:business_analyst
+npm run dev:chat:web_browser
+npm run dev:chat:multi_bluesky_agent       # multi-agent example
+
+npm run schema:generate                    # schema_generate
+npm run schema:check                       # schema_check
+
+npm run dev:eval:run:bluesky               # eval_run on the bluesky suite
+npm run dev:eval:grade:bluesky             # eval_grade on the bluesky suite
+
+npm run dev:log:stream                     # log stream
+
+npm run dev:jobs:dispatcher                # run the job dispatcher (watch mode)
+npm run dev:jobs:list                      # jobs list
+npm run dev:jobs:list:watch                # jobs list, refreshed every second
+npm run dev:jobs:cost                      # jobs cost
+npm run dev:jobs:create:news_brief         # create a sample crew_news_brief job
+npm run dev:jobs:schedules:list            # jobs schedules list
+npm run dev:cost:list:watch                # live cost UI (openai-cost)
+```
+
+These are aliases — read `packages/_skillet_agent/package.json` to see what each one maps to.

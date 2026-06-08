@@ -1,0 +1,90 @@
+---
+title: Install
+---
+
+# Install
+
+## Prerequisites
+
+- **Node.js 22+** and **npm** (CI runs on Node 22). The package is ESM and targets ES2022.
+- An **OpenAI API key** if you plan to use `gpt-*` models. Local models via [LMStudio](/models) need no key.
+
+## Clone and install
+
+`skillet_agent` lives in the [skillet_agent monorepo](https://github.com/skilled-crew/skilled_crew). Each package manages its own dependencies — there is no root install step.
+
+```bash
+git clone https://github.com/skilled-crew/skilled_crew.git
+cd skillet_agent/packages/_skillet_agent
+npm install
+```
+
+## Configure the environment
+
+The CLI loads variables from `.env` in the package root via `dotenv`. Copy the sample file and edit it:
+
+```bash
+cp .env-sample .env
+```
+
+Required for OpenAI models:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | — | API key for any `openai/*` model. Get one at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). |
+
+Optional overrides:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENAI_BASE_URL` | OpenAI SDK default | Override the base URL for the `openai` provider (e.g. to point at a proxy or gateway). |
+| `LMSTUDIO_BASE_URL` | `http://localhost:1234/v1` | Override the base URL for the `lmstudio` provider (e.g. a remote LMStudio host). |
+| `SKILLET_MODEL_RUNNER` | `openai/gpt-4.1-nano` | Model used by the orchestrator and skill agents. Format: `<provider>/<model>`. Supported providers: `openai`, `lmstudio`. |
+| `SKILLET_MODEL_EVAL` | `openai/gpt-4.1-nano` | Model used by the LLM-as-judge in `eval_grade`. Same `<provider>/<model>` format. |
+
+If the override is not set, the runner falls back to the per-agent `model` line in `AGENTS.md`, then to `openai/gpt-4.1-nano`. See [Models](/models) for the full list of supported providers.
+
+### Background jobs
+
+The [job lane](/jobs/overview) reads a few optional variables (all have safe defaults):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SKILLET_JOB_DB` | `./outputs/.skillet_jobs.sqlite` | Path to the job board / schedules SQLite file. |
+| `SKILLET_JOB_BUDGET_USD` | off | Spend cap for the [dispatcher](/jobs/dispatcher); once windowed spend reaches it, no new jobs are claimed. |
+| `SKILLET_JOB_BUDGET_WINDOW_HOURS` | `24` | Rolling window for the budget cap. |
+| `SKILLET_MAX_TURNS` | `50` | Per-run cap on agent turns. |
+
+`SKILLET_JOB_ID` is set automatically on a job worker process — you don't set it by hand.
+
+### Web client
+
+The [web client](/web-client/overview) reads the **same `.env`** (it loads `packages/_skillet_agent/.env`) and adds:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `SESSION_SECRET` | yes (web only) | Secret for signing express-session cookies. The server refuses to start without it. |
+| `PORT` | no (default `5173`) | Port the web server listens on. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | Set both to enable Google OAuth sign-in; otherwise only local email/password auth is available. |
+
+See [Web Client › Running](/web-client/running) for the full setup.
+
+## Verify
+
+Run the sample `todo_list` skillet in one-shot mode:
+
+```bash
+npm run dev:run:todo_list
+```
+
+You should see the agent list the tasks currently in `outputs/tasks.json`. If you instead want an interactive REPL:
+
+```bash
+npm run dev:chat:todo_list
+```
+
+Either command creates an `outputs/` directory alongside the source, which holds the session SQLite store, cache, cost tracker, and the JSONL replay logs. See [Sessions and logs](/concepts/sessions-and-logs) for what each file is for.
+
+## Next
+
+Walk through [Run your first skillet](/getting-started/first-skillet) for an annotated tour of the `todo_list` example — what's in the YAML, what each skill does, and how to make your own.

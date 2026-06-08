@@ -1,0 +1,30 @@
+{
+    "name": "_skillet_docsite",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "npm run typedoc && next dev",
+        "build": "npm run typedoc && next build",
+        "start": "next start",
+        "deploy": "npm run build && touch out/.nojekyll && gh-pages -d out --dotfiles",
+        "typedoc": "typedoc && node ./scripts/strip_mdx_link_ext.mjs",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "next": "^15.5.0",
+        "nextra": "4.5.1",
+        "nextra-theme-docs": "4.5.1",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0"
+    },
+    "devDependencies": {
+        "@types/node": "^25.5.0",
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0",
+        "gh-pages": "^6.3.0",
+        "typedoc": "^0.28.19",
+        "typedoc-plugin-markdown": "^4.11.0",
+        "typescript": "^6.0.2"
+    }
+}

@@ -1,0 +1,9 @@
+{
+    "name": "chrome_devtools",
+    "type": "stdio",
+    "command": "npx",
+    "args": [
+        "chrome-devtools-mcp@latest",
+        "--autoConnect"
+    ]
+}

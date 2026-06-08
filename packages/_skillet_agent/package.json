@@ -1,0 +1,84 @@
+{
+    "name": "skilled_crew",
+    "version": "1.0.6",
+    "description": "Markdown-driven AI agent orchestration engine — describe agents and skills in one .skilled_crew.yaml file, then run them interactively (CLI or web) or as durable, scheduled jobs.",
+    "type": "module",
+    "main": "./dist/cli.js",
+    "bin": {
+        "skilled_crew": "./dist/cli.js"
+    },
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "scripts/install_data_subprojects.sh"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "scripts": {
+        "postinstall": "sh ./scripts/install_data_subprojects.sh",
+        "dev:run:todo_list": "tsx ./src/cli.ts run -c ./data/skillets/todo_list.skilled_crew.yaml 'what are my tasks?'",
+        "dev:chat:todo_list": "tsx ./src/cli.ts chat -c ./data/skillets/todo_list.skilled_crew.yaml",
+        "dev:chat:bluesky_social_manager": "tsx ./src/cli.ts chat -c ./data/skillets/bluesky_social_manager.skilled_crew.yaml",
+        "dev:chat:business_analyst": "tsx ./src/cli.ts chat -c ./data/skillets/business_analyst.skilled_crew.yaml",
+        "dev:chat:web_browser": "tsx ./src/cli.ts chat -c ./data/skillets/web_browser.skilled_crew.yaml",
+        "dev:chat:multi_bluesky_agent": "tsx ./src/cli.ts chat -c ./data/skillets/multi_bluesky_agent/multi_bluesky_agent.skilled_crew.yaml",
+        "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
+        "postbuild": "chmod +x ./dist/cli.js",
+        "clean": "rm -rf dist",
+        "prepublishOnly": "npm run test && npm run clean && npm run build",
+        "publish:all": "npm run build && npm version patch && npm publish --access public",
+        "typecheck": "tsc --noEmit",
+        "schema:generate": "tsx ./src/cli.ts schema_generate",
+        "schema:check": "tsx ./src/cli.ts schema_check",
+        "dev:eval:run:bluesky": "tsx ./src/cli.ts eval_run -c ./data/skillets/bluesky_social_manager.skilled_crew.yaml -f ./data/skillets/evals/bluesky_evals",
+        "dev:eval:grade:bluesky": "tsx ./src/cli.ts eval_grade -f ./data/skillets/evals/bluesky_evals",
+        "dev:log:stream": "tsx ./src/cli.ts log stream",
+        "dev:cost:list": "npx --package=openai-cost openai_cost_pp -p '{namespace}/{userId}/{skilletId}/{sessionId}' -k userId,skilletId  -i ../../.skilled-agent/state/.openai_cost_tracker.sqlite",
+        "dev:cost:list:watch": "npx --package=openai-cost openai_cost_pp -p '{namespace}/{userId}/{skilletId}/{sessionId}' -k userId,skilletId  -i ../../.skilled-agent/state/.openai_cost_tracker.sqlite -w",
+        "dev:cost:clear": "rm -f ../../.skilled-agent/state/.openai_cost_tracker.sqlite",
+        "openai_cache:clean": "rm -f ../../.skilled-agent/cache/.openai_cache.sqlite",
+        "clean:all": "npm run dev:cost:clear && npm run openai_cache:clean",
+        "test": "tsx --test 'tests/**/*.test.ts'",
+        "test:fallow": "npx --yes fallow audit",
+        "test:all": "npm run typecheck && npm test",
+        "test:watch": "tsx --test --watch 'tests/**/*.test.ts'",
+        "test:coverage": "tsx --test --experimental-test-coverage 'tests/**/*.test.ts'"
+    },
+    "devDependencies": {
+        "@types/bcrypt": "^6.0.0",
+        "@types/better-sqlite3": "^7.6.13",
+        "@types/mdast": "^4.0.4",
+        "@types/node": "^25.5.0",
+        "@types/proper-lockfile": "^4.1.4",
+        "@types/uuid": "^10.0.0",
+        "tsc-alias": "^1.8.17",
+        "tsx": "^4.21.0",
+        "typescript": "^6.0.2"
+    },
+    "dependencies": {
+        "@keyv/sqlite": "^4.0.8",
+        "@openai/agents": "^0.8.2",
+        "@openai/agents-core": "^0.8.3",
+        "bcrypt": "^6.0.0",
+        "better-sqlite3": "^12.8.0",
+        "cacheable": "^2.3.3",
+        "chalk": "^5.6.2",
+        "commander": "^14.0.3",
+        "dotenv": "^17.3.1",
+        "gray-matter": "^4.0.3",
+        "openai": "^6.33.0",
+        "openai-cache": "^1.0.37",
+        "openai-cost": "^1.0.32",
+        "remark": "^15.0.1",
+        "uuid": "^11.0.0",
+        "yaml": "^2.8.3",
+        "zod": "^4.0.0"
+    }
+}

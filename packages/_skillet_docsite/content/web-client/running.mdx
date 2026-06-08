@@ -1,0 +1,55 @@
+---
+title: Running it
+---
+
+# Running the web client
+
+The web client lives in `packages/_skillet_webclient`. It builds a static front-end with Vite and serves it from an Express server run with `tsx`.
+
+## Install
+
+```bash
+cd packages/_skillet_webclient
+npm install
+```
+
+## Environment
+
+The server loads its configuration from the **`_skillet_agent` package's `.env`** (`packages/_skillet_agent/.env`), not from a `.env` in the webclient folder — so the same file that configures the CLI also configures the web app. Set at least:
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `OPENAI_API_KEY` | yes | — | Checked at boot; the server exits without it. Also gates whether OpenAI models appear in the picker. |
+| `SESSION_SECRET` | yes | — | Secret used to sign express-session cookies. The server refuses to start without it. |
+| `PORT` | no | `5173` | Port the server listens on. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | — | Set **both** to enable Google OAuth; otherwise only local email/password sign-in is available. See [Authentication](/web-client/authentication). |
+| `SKILLET_JOB_DB` | no | `…/outputs/.skillet_jobs.sqlite` | Path to the shared [job board](/jobs/overview); must match the dispatcher's. |
+| `LMSTUDIO_BASE_URL` | no | `http://localhost:1234/v1` | Probed to list local [LMStudio](/models) models in the picker. |
+
+## Develop
+
+```bash
+npm run dev
+```
+
+This runs two watchers concurrently: `vite build --watch` (rebuilds the front-end into `dist/` on change) and `tsx watch` on the server (which also watches `../_skillet_agent/src`, so engine changes restart it too). There is **no Vite dev-server middleware** — the Express server always serves the built `dist/`, so the `vite build --watch` half must be running for the pages to load.
+
+## Production
+
+```bash
+npm run build      # vite build  +  tsc -p tsconfig.build.json
+npm run start      # web:build, then run the server with tsx
+```
+
+`start` (and `server:start`) build the front-end and then run the server. The model is the same as dev: compile to `dist/`, serve `dist/`.
+
+## Run the dispatcher alongside
+
+The web server is only the UI/API layer — it does **not** execute jobs. For queued and scheduled work to actually run, start a [dispatcher](/jobs/dispatcher) from the `_skillet_agent` package, pointed at the same board:
+
+```bash
+cd ../_skillet_agent
+npm run dev:jobs:dispatcher
+```
+
+Make sure both processes resolve the same `SKILLET_JOB_DB` (they share the default under `_skillet_agent/outputs/` out of the box).

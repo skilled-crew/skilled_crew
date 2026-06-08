@@ -1,0 +1,9 @@
+{
+    "name": "datetime_mcp",
+    "type": "stdio",
+    "command": "npx",
+    "args": [
+        "tsx",
+        "/absolute/path/to/datetime_mcp/src/index.ts"
+    ]
+}

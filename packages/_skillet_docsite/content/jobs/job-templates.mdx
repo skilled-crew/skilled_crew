@@ -1,0 +1,104 @@
+---
+title: .job_workflow.yaml
+---
+
+# `.job_workflow.yaml`
+
+A job template defines a **crew** — a graph of jobs that get instantiated together and committed to the [board](/jobs/overview). It names the skillet to run, declares the inputs a caller can supply, and lists the jobs with their dependencies. The schema is `JobTemplateConfigZod` ([`src/job_lane/job_template_zod.ts`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/src/job_lane/job_template_zod.ts)); it has a generated [JSON Schema](/configuration/json-schema) for editor support.
+
+## Top-level shape
+
+```yaml
+name: crew_news_brief
+description: Research → analyze → write the daily intelligence brief.
+
+# Path to the skillet the workers run, relative to this template file.
+skillet: ./crew_news_brief.skilled_crew.yaml
+
+# Default workspace for every job in the crew (overridable per job).
+workspace: dir:./_data
+
+inputs:
+  topic:
+    type: string
+    default: null
+    description: The subject to research and write about.
+
+jobs:
+  - id: research
+    assignee: research_agent
+    title: Gather sources for daily brief
+    body: |
+      Run the research stage. Topic: {{ topic | default('the config preset topic') }}.
+      ...call job_complete with metadata { "clusters": [...] }.
+    result_schema:
+      type: object
+      required: [clusters]
+      properties:
+        clusters: { type: array, minItems: 3 }
+
+  - id: analyze
+    assignee: analyst_agent
+    title: Rank clusters into insights
+    parents: [research]
+    body: |
+      Call job_show first — the research result is in parent_results...
+
+  - id: write
+    assignee: writer_agent
+    title: Publish the daily brief
+    parents: [analyze]
+    body: |
+      ...
+```
+
+| Field | Required | Purpose |
+|---|---|---|
+| `skillet` | yes | Path to the `.skilled_crew.yaml` the workers run, resolved relative to the template file. |
+| `jobs` | yes | The list of jobs (at least one), in topological order — a parent must appear before its children. |
+| `name` | no | Human label, shown in template pickers. |
+| `description` | no | Longer description, shown in template pickers. |
+| `workspace` | no | Default [workspace](/jobs/overview#workspaces) for the crew (`scratch`, `worktree`, or `dir:<rel>`). Default `scratch`. |
+| `inputs` | no | Map of input name → `{ type?, default?, description? }`. Values are passed in at instantiation and exposed to templating. |
+
+## Per-job fields
+
+| Field | Required | Purpose |
+|---|---|---|
+| `id` | yes | Template-local id, unique within the file. Used to wire `parents`; must appear before any job that lists it as a parent. |
+| `assignee` | yes | The agent (a key under `agents:` in the skillet) that runs this job. |
+| `title` | yes | Short label for the board. |
+| `body` | yes | The task prompt sent to the worker. Supports templating (below). |
+| `parents` | no | List of job ids this job depends on. The job stays `todo` until all parents are `done`. |
+| `result_schema` | no | A small JSON-Schema subset the worker's `job_complete` metadata is validated against. (`resultSchema` is accepted as an alias; `result_schema` wins if both are present.) |
+| `workspace` | no | Per-job workspace override. |
+| `maxRetries` | no | How many times a crashed/protocol-violating run is retried before the job is given up (default 2). |
+
+## Templating
+
+The `body` of a job and the values in `inputs` are rendered with a small built-in templating language (a mini-Jinja, no external dependency):
+
+| Form | Result |
+|---|---|
+| `{{ topic }}` | Substitute the value of `topic`. |
+| `{{ topic \| default('the preset topic') }}` | Use `topic`, falling back to the literal when it's empty/null. |
+| `{{ '...' if topic else '' }}` | Inline conditional. |
+| `{{ 'a' + topic + 'b' }}` | String concatenation with `+`. |
+
+A built-in `today` (formatted `YYYY-MM-DD`) is always available, so a job body can reference `{{ today }}` without it being declared as an input.
+
+## Instantiating and committing
+
+A template becomes live jobs in two steps the runtime does for you:
+
+1. **Instantiate** — render every job's `body` with the supplied inputs, resolve the `skillet` and any `dir:` workspaces to absolute paths, and produce an in-memory crew.
+2. **Commit** — write the jobs to the board, mapping each template-local `id` to a real database id and threading the `parents` links.
+
+You rarely call these directly: [`jobs create`](/jobs/cli#jobs-create) does both from the CLI, a [`lane: job` command](/configuration/command-md#posting-a-job-from-a-command) does it from chat, and the web client's "New job" widget and [schedules](/jobs/schedules) do it for you.
+
+## Sample templates
+
+Two working templates ship in the repo:
+
+- [`data/crew_news_brief/crew_news_brief.job_workflow.yaml`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/data/crew_news_brief/crew_news_brief.job_workflow.yaml) — a three-stage research → analyze → write crew.
+- [`data/crew_social_share/crew_social_share.job_workflow.yaml`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/data/crew_social_share/crew_social_share.job_workflow.yaml) — turn a topic into a social post.

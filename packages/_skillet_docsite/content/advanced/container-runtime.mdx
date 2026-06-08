@@ -1,0 +1,88 @@
+---
+title: Container runtime
+---
+
+# Container runtime
+
+By default, the `run_command_line` tool spawns commands as child processes on the host (the `script_runtime.kind: local` default). Set `kind: container` and the runtime builds a Docker image from a Dockerfile you supply and runs every skill command inside a container.
+
+This is useful when:
+
+- Skills need system dependencies you don't want on the host (Python toolchains, headless Chrome, language-specific package managers).
+- You're running someone else's skillet and don't want their scripts touching your filesystem.
+- You want reproducible behavior across machines.
+
+## Wiring it on
+
+In your `.skilled_crew.yaml`:
+
+```yaml
+script_runtime:
+  kind: container
+  dockerfile: ../dotclaude_todo_list/Dockerfile
+```
+
+`dockerfile` is relative to the `.skilled_crew.yaml` file. The file must exist; if it doesn't, the runtime errors at startup.
+
+A real example from the `todo_list` skillet (commented out by default — uncomment to enable):
+
+```yaml
+# script_runtime:
+#   kind: container
+#   dockerfile: ../dotclaude_todo_list/Dockerfile
+```
+
+## What the runtime does
+
+On first run:
+
+1. Builds the image from your Dockerfile, tagged per `(skilletId, userId)`.
+2. Starts a long-lived container with the agent folder mounted in.
+3. Routes every `run_command_line` call through `docker exec` against that container.
+
+On subsequent runs the runtime reuses the existing image and container if both are up to date.
+
+## Per-user / per-skillet isolation
+
+Containers are keyed by **both** the skillet `id` and the `userId`. Two users running the same skillet get separate containers (and separate filesystems). The same user re-entering the same skillet gets the same container so state inside the container — installed packages, scratch files — persists across runs.
+
+This matters most for the [`_skillet_webclient`](https://github.com/skilled-crew/skilled_crew/tree/main/packages/_skillet_webclient) web frontend: each authenticated user runs in their own sandbox.
+
+## The Dockerfile
+
+Anything goes. A minimal one for a Node-based skillet:
+
+```dockerfile
+FROM node:20-slim
+
+WORKDIR /workspace
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+# The agent folder is bind-mounted at /workspace at runtime,
+# so we don't COPY it here.
+CMD ["sleep", "infinity"]
+```
+
+Two conventions to follow:
+
+- **Don't `COPY` the agent folder.** The runtime bind-mounts it at runtime so edits on the host are visible without rebuilding.
+- **Long-running CMD.** The container has to stay up so `docker exec` can keep hitting it. `sleep infinity` is the lazy default; a process that holds resources you need is the production default.
+
+## Trade-offs
+
+| | `local` | `container` |
+|---|---|---|
+| Startup latency | Instant | Image build first time (seconds–minutes) |
+| Per-call overhead | None | `docker exec` cost (~10 ms) |
+| Filesystem isolation | None — scripts can touch anything | Confined to the mounted folder |
+| Dependency drift | Whatever's on your laptop | Pinned in the Dockerfile |
+| CI reproducibility | Brittle | Excellent |
+
+Local is the right default for everything you control. Container is the right default the moment something external is running scripts on your behalf, or the moment "works on my machine" stops being a joke.
+
+## Implementation
+
+Lives in `packages/_skillet_agent/src/script_runner/script_runner_container.ts` and `container_helper.ts`. The container helper handles image build, container provisioning, and command exec; the runner delegates to it whenever `script_runtime.kind` is `container`.

@@ -1,0 +1,112 @@
+---
+title: .command.md
+---
+
+# `.command.md`
+
+A `.command.md` file defines one **user-invoked slash command**. The user types `/<name> [arguments]` in chat mode and the runtime expands the file's body into a regular user message, substituting `$ARGUMENTS` with whatever followed the command name.
+
+These are different from the **built-in** slash commands like `/help`, `/skills`, `/compact`. See [CLI › Slash commands](/cli/slash-commands) for those.
+
+## Shape
+
+```markdown
+---
+description: Translate the following text into French.
+agent: optional-agent-name
+---
+
+Please translate the following into French. Keep it idiomatic:
+
+$ARGUMENTS
+```
+
+If a user types `/translate ciao` in chat, the orchestrator receives:
+
+```
+Please translate the following into French. Keep it idiomatic:
+
+ciao
+```
+
+## Frontmatter
+
+| Field | Required | Purpose |
+|---|---|---|
+| `description` | yes | Shown in `/help` so the user can discover the command. Must be non-empty. |
+| `agent` | no | Route this command to a named agent instead of the entry agent. Useful for multi-agent skillets when one command always belongs to a specific specialist. |
+| `lane` | no | `chat` (default) or `job`. `chat` expands the body into a prompt and runs in the current turn. `job` instead posts a [job](/jobs/overview) graph to the board instead of replying inline. |
+| `template` | no | Only for `lane: job`. Path to the [`.job_workflow.yaml`](/jobs/job-templates) to instantiate when the command is invoked. |
+| `inputs` | no | Only for `lane: job`. A map of template input name → expression. `$ARGUMENTS` is substituted before the template renders, so a command can turn the typed text into a job's inputs. |
+
+Schema in [`src/config/command/command_zod.ts`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/src/config/command/command_zod.ts).
+
+## Posting a job from a command
+
+A `lane: job` command is the bridge from chat to the [job lane](/jobs/overview): instead of running the agent in the current turn, it instantiates a job template and commits the graph to the board, where the [dispatcher](/jobs/dispatcher) picks it up.
+
+```markdown
+---
+description: Kick off a daily news brief as a background job.
+lane: job
+template: ../crew_news_brief/crew_news_brief.job_workflow.yaml
+inputs:
+  topic: $ARGUMENTS
+---
+```
+
+Typing `/news_brief rust web frameworks` in chat commits a `crew_news_brief` job with `topic: "rust web frameworks"` and returns the new job ids — it does not block the conversation.
+
+## Wiring it in
+
+Add the command to your `.skilled_crew.yaml`:
+
+```yaml
+commands:
+  - name: translate
+    filePath: ../dot_claude/commands/translate.command.md
+  - name: french
+    filePath: ../dot_claude/commands/french.command.md
+```
+
+The `name` is what the user types; the `filePath` is relative to the `.skilled_crew.yaml` file.
+
+## `$ARGUMENTS` substitution
+
+The literal string `$ARGUMENTS` (no braces) is replaced with everything after the command name. If the user types `/translate hello world`, `$ARGUMENTS` becomes `hello world`. If the user types just `/translate`, `$ARGUMENTS` becomes the empty string — handle the no-args case in your prompt if it matters.
+
+You can reference `$ARGUMENTS` more than once or in arbitrary positions:
+
+```markdown
+---
+description: Compare two strings for tone.
+---
+
+Compare these two phrasings and tell me which is more polite:
+
+A) $ARGUMENTS
+B) (your suggested rewrite)
+```
+
+## Sample files
+
+Real commands ship under [`packages/_skillet_agent/data/dot_claude/commands/`](https://github.com/skilled-crew/skilled_crew/tree/main/packages/_skillet_agent/data/dot_claude/commands). The `french.command.md` example is one line:
+
+```markdown
+---
+description: start talking in french.
+---
+
+From now on, please respond in French. I want to practice my language skills!
+```
+
+## When to use a command vs. a skill
+
+| Use a command | Use a skill |
+|---|---|
+| One-shot prompt rewriting / templating | The LLM needs to call out to shell scripts |
+| User-facing convenience (`/french`, `/caveman`) | Domain capability (`create-task`, `search-bluesky`) |
+| No external side effects | Side effects, persistence, API calls |
+| Static body with `$ARGUMENTS` | Decisions the LLM has to make |
+
+A command always becomes a user message and goes through the same orchestrator. A skill becomes a callable sub-agent with its own tools.

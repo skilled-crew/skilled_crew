@@ -1,0 +1,10 @@
+version: '1.1'
+id: test-full-runner
+agents:
+  main:
+    instructionsPath: ./AGENTS.md
+    skills:
+      - name: my-skill
+        folderPath: ./skills/my-skill
+    mcp_servers:
+      - filePath: ./mcp/server.json

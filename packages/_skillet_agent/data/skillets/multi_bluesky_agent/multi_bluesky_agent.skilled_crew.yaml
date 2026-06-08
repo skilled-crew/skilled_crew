@@ -1,0 +1,30 @@
+version: "1.0"
+
+commands:
+  # the build_msg is used by the user to trigger a workflow
+  # e.g.
+  # - search top story on hackernews we didnt cover yet
+  # - generate a message for the user to post on bluesky about it
+  # - actually post it on bluesky
+  # - add it to the notion database
+  - name: build_msg
+    filePath: ./commands/build_msg.command.md
+
+entryPointAgent: orchestrator_agent
+
+agents:
+  # orchestrator_agent is responsible for orchestrating the other agents
+  orchestrator_agent:
+    instructionsPath: ./agents/orchestrator_agent_instructions.md
+  # researcher_agent looks for data on hackernews
+  researcher_agent:
+    instructionsPath: ./agents/researcher_agent_instructions.md
+    skills:
+      - name: hackernews
+        folderPath: ../../dot_claude/skills/hackernews
+  # admin_agent manages the notion database where we store the data for this project
+  admin_agent:
+    instructionsPath: ./agents/admin_agent_instructions.md
+    skills:
+      - name: notion-api
+        folderPath: ../../dot_claude/skills/notion-api

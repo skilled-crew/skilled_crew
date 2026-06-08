@@ -1,0 +1,123 @@
+{
+    "name": "bluesky",
+    "evals": [
+        {
+            "id": 1,
+            "prompt": "Post 'Hello Bluesky! Testing my new AI agent.' to my Bluesky account.",
+            "expected_output": "Should check auth status first with `npx bsky_client --json status`. Should then run `npx bsky_client --json posts create \"Hello Bluesky! Testing my new AI agent.\"`. Should confirm the post was created and return the AT-URI of the new post.",
+            "assertions": [
+                "Checks auth status before posting",
+                "Uses `npx bsky_client --json posts create` command",
+                "Passes the exact post text as argument",
+                "Returns or displays the AT-URI of the created post"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "prompt": "Show me my last 5 posts on Bluesky.",
+            "expected_output": "Should run `npx bsky_client --json posts list --limit 5`. Should display the posts with their text, timestamp, and AT-URI.",
+            "assertions": [
+                "Uses `npx bsky_client --json posts list` command",
+                "Passes `--limit 5` flag",
+                "Displays post text and metadata",
+                "Uses --json flag for structured output"
+            ],
+            "files": []
+        },
+        {
+            "id": 3,
+            "prompt": "Search Bluesky for posts about TypeScript and show me the top results.",
+            "expected_output": "Should run `npx bsky_client --json search posts \"TypeScript\" --sort top`. Should present the search results with post text, author handle, and timestamps.",
+            "assertions": [
+                "Uses `npx bsky_client --json search posts` command",
+                "Passes \"TypeScript\" as the search query",
+                "Uses `--sort top` for top results",
+                "Displays post text and author"
+            ],
+            "files": []
+        },
+        {
+            "id": 4,
+            "prompt": "Who follows jerome-etienne.bsky.social on Bluesky?",
+            "expected_output": "Should run `npx bsky_client --json followers jerome-etienne.bsky.social`. Should list the followers with their handles and display names.",
+            "assertions": [
+                "Uses `npx bsky_client --json followers` command",
+                "Passes `jerome-etienne.bsky.social` as the handle argument",
+                "Displays follower handles and display names"
+            ],
+            "files": []
+        },
+        {
+            "id": 5,
+            "prompt": "Look up the Bluesky profile for nytimes.com.",
+            "expected_output": "Should run `npx bsky_client --json profile nytimes.com`. Should present the profile details: DID, handle, display name, bio, follower count, following count, post count, and relationship status.",
+            "assertions": [
+                "Uses `npx bsky_client --json profile` command",
+                "Passes `nytimes.com` as the handle argument",
+                "Displays follower/following/post counts",
+                "Displays display name and bio"
+            ],
+            "files": []
+        },
+        {
+            "id": 6,
+            "prompt": "Like this Bluesky post: at://did:plc:abc123/app.bsky.feed.post/xyz789",
+            "expected_output": "Should run `npx bsky_client --json like at://did:plc:abc123/app.bsky.feed.post/xyz789`. Should confirm the post was liked.",
+            "assertions": [
+                "Uses `npx bsky_client --json like` command",
+                "Passes the exact AT-URI as argument",
+                "Confirms the like was recorded"
+            ],
+            "files": []
+        },
+        {
+            "id": 7,
+            "prompt": "Find Bluesky users interested in AI safety.",
+            "expected_output": "Should run `npx bsky_client --json search users \"AI safety\"`. Should present matching user handles and display names.",
+            "assertions": [
+                "Uses `npx bsky_client --json search users` command",
+                "Passes \"AI safety\" as the search query",
+                "Displays user handles and display names"
+            ],
+            "files": []
+        },
+        {
+            "id": 8,
+            "prompt": "Send me a newsletter — compose and post a Bluesky thread about the 5 best practices for writing clean TypeScript.",
+            "expected_output": "Should recognize this requires multiple posts to form a thread. Should create the first post with `npx bsky_client --json posts create`, capture the AT-URI, then use `npx bsky_client --json reply <uri>` for each subsequent post in the thread. Should not exceed Bluesky's character limit per post.",
+            "assertions": [
+                "Recognizes a thread requires chained reply commands",
+                "Creates the first post with `posts create`",
+                "Uses `reply <uri>` for each subsequent post",
+                "Respects character limits per post",
+                "Covers 5 best practices across the thread"
+            ],
+            "files": []
+        },
+        {
+            "id": 9,
+            "prompt": "I want to unfollow jerome-etienne.bsky.social on Bluesky.",
+            "expected_output": "Should run `npx bsky_client --json unfollow jerome-etienne.bsky.social`. Should confirm the unfollow succeeded or report an error if the user was not being followed.",
+            "assertions": [
+                "Uses `npx bsky_client --json unfollow` command",
+                "Passes `jerome-etienne.bsky.social` as the handle argument",
+                "Reports success or error",
+                "Notes that unfollow errors if not currently following"
+            ],
+            "files": []
+        },
+        {
+            "id": 10,
+            "prompt": "What's the weather forecast? Post it to Bluesky.",
+            "expected_output": "Should recognize that fetching weather data is outside the bluesky skill's scope. Should defer to the appropriate skill for weather data. Should offer to post the result to Bluesky once the weather data is retrieved.",
+            "assertions": [
+                "Recognizes weather fetching is outside this skill's scope",
+                "Defers to an appropriate skill for weather data",
+                "Offers to post the result once data is available",
+                "Does not attempt to fetch weather using bsky_cli"
+            ],
+            "files": []
+        }
+    ]
+}

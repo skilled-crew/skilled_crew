@@ -1,0 +1,48 @@
+---
+title: Overview
+---
+
+# Web client
+
+`_skillet_webclient` is the multi-user web front-end for `skillet_agent`. It pairs an **Express server** (a JSON + Server-Sent-Events API) with a set of **Vite-built, framework-free TypeScript pages**. Signed-in users chat with preset agents (replies streamed token-by-token), queue and schedule background [jobs and crews](/jobs/overview), review deliverables in an inbox, and manage recurring schedules — all on top of the same engine the CLI drives.
+
+It is a sibling package to `_skillet_agent` and depends on it directly (`skillet_agent` is a `file:../_skillet_agent` dependency), importing its `AgentRunner`, `JobStore`, `JobWorkflow`, `ScheduleStore`, and session-log classes.
+
+## Architecture
+
+```
+        browser
+          │  HTTP + SSE
+          ▼
+┌─────────────────────────────┐
+│  Express server (src/)      │
+│   /auth/*   passport auth   │
+│   /api/*    sessions, jobs, │
+│             schedules, …    │
+│   static    Vite-built dist/│
+└──────────────┬──────────────┘
+               │ imports skillet_agent, reads its SQLite DBs
+               ▼
+   _skillet_agent/outputs/*.sqlite   (users, sessions, job board)
+```
+
+- **Server** — Express 5 (`src/server.ts`). Sets up authentication, mounts the `/api/*` routers, and serves the built front-end from `dist/`. It is a pure UI/API layer over the [job board](/jobs/overview) — it does **not** run the [dispatcher](/jobs/dispatcher); you run that as a separate `skillet_agent` process.
+- **Client** — `public/` holds one folder per page (chat, inbox, job board, schedules, profile, login, pricing, landing). Each is plain DOM TypeScript bundled by Vite, styled with Bootstrap from a CDN. No React/Vue.
+- **Shared state** — all persistence lives in `_skillet_agent`. The server opens the same SQLite files under `_skillet_agent/outputs/`: web users (`.user_store.sqlite`), express sessions (`.web_sessions.sqlite`), chat-session rehydration handles (`.web_chat_handles.sqlite`), conversation history (`.agent_sessions.sqlite`), and the shared job board (`.skillet_jobs.sqlite`).
+
+## What users can do
+
+| Page | What it's for |
+|---|---|
+| [Chat](/web-client/pages#chat) | Live, streaming conversation with a preset agent. Attachments, voice input, thread history, model picker. |
+| [Inbox](/web-client/pages#inbox) | Your jobs' deliverables, with reply / redo / archive. |
+| [Job board](/web-client/pages#job-board) | Admin Kanban over every user's jobs, with a dispatcher-status indicator. |
+| [Schedules](/web-client/pages#schedules) | Create and manage recurring jobs. |
+| [Profile / Login / Register / Pricing](/web-client/pages) | Account home, auth, and the pricing calculator. |
+
+## Next
+
+- [Running it](/web-client/running) — build, run, and the environment variables it needs.
+- [Authentication](/web-client/authentication) — local + Google sign-in, sessions, the admin model.
+- [Pages](/web-client/pages) — what each page does.
+- [HTTP API](/web-client/api) — the full route table.

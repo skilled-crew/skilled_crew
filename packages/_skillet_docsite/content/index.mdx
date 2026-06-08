@@ -1,0 +1,47 @@
+---
+title: Introduction
+---
+
+# skillet_agent
+
+`skillet_agent` is an AI agent orchestration engine. You describe a system in a single YAML file — a **skillet** — and the runtime spins up one orchestrator agent plus one sub-agent per **skill**. The orchestrator routes each user request to the right skill, which runs shell scripts in its own folder to do real work. Drive it from a CLI (chat interactively, run one-shot, or embed it as a library), queue it as durable background **jobs** and **crews** on a scheduled dispatcher, or expose the whole thing to end users through the multi-user [web client](/web-client/overview).
+
+A skillet is a **single YAML file** plus a few markdown files. Here is the entire definition for a todo-list agent:
+
+```yaml
+# todo_list.skilled_crew.yaml
+version: "1.0"
+id: "todo_list"
+
+agents:
+  todo_list_agent:
+    instructionsPath: ../dotclaude_todo_list/AGENTS.md
+    skills:
+      - name: create-task
+        folderPath: ../dotclaude_todo_list/skills/create-task
+      - name: list-tasks
+        folderPath: ../dotclaude_todo_list/skills/list-tasks
+      - name: complete-task
+        folderPath: ../dotclaude_todo_list/skills/complete-task
+      - name: delete-task
+        folderPath: ../dotclaude_todo_list/skills/delete-task
+```
+
+Each skill folder holds a `SKILL.md` (a short markdown file describing what the skill does) and a `scripts/` directory of executables the skill can run. The orchestrator reads `AGENTS.md` for triage instructions. That's the whole shape.
+
+## What this site covers
+
+These docs are aimed at **operators** — people writing skillets, running the CLI, and shipping agents into production. If you're embedding `skillet_agent` as a library, head to the [API Reference](/api) instead.
+
+- **[Getting Started](/getting-started/install)** — install, set environment variables, run your first skillet.
+- **[Concepts](/concepts/architecture)** — how the orchestrator and skill agents fit together; where session state, logs, cache, and cost data live.
+- **[Configuration](/configuration/skilled-crew-yaml)** — the `.skilled_crew.yaml` schema, `SKILL.md` / `AGENTS.md` / `.command.md` contracts, and MCP server integration.
+- **[CLI](/cli/commands)** — every command and flag, plus the slash commands available inside `chat`.
+- **[Jobs & Scheduling](/jobs/overview)** — run skillets as durable background jobs and multi-step crews, on a recurring schedule, via the dispatcher.
+- **[Models](/models)** — supported providers (OpenAI, LMStudio) and how to pick a model per skillet.
+- **[Evaluations](/evaluations)** — write `evals.json`, run a suite, grade with an LLM-as-judge.
+- **[Web Client](/web-client/overview)** — the multi-user web app: authenticated chat, an inbox of results, a job board, and recurring schedules.
+
+## Why "skillet"?
+
+Each skill folder is a self-contained unit you can drop into any skillet — heat up the ingredients you need, leave the rest. A skillet YAML is just a recipe that tells the runtime which skills to load and which agent gets to use them.

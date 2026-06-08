@@ -1,0 +1,95 @@
+{
+  "name": "hackernews",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "What are the top stories on Hacker News right now?",
+      "expected_output": "Should use the topstories endpoint to fetch story IDs, then fetch details for each. Should present title, score, and URL for the top 10 stories. Should use curl with jq for filtering.",
+      "assertions": [
+        "Uses /v0/topstories.json endpoint",
+        "Fetches item details for each story ID",
+        "Presents title, score, and URL",
+        "Shows at least top 10 stories",
+        "Uses jq for JSON filtering"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Show me the best HN stories about AI and machine learning from today.",
+      "expected_output": "Should use the beststories or topstories endpoint, then filter results by title matching AI/GPT/LLM/Machine Learning keywords using jq select(). Should fetch enough stories (50+) to find relevant ones. Should present matching stories with score and title.",
+      "assertions": [
+        "Uses /v0/beststories.json or /v0/topstories.json endpoint",
+        "Filters stories by AI/ML keywords using jq",
+        "Fetches enough stories to find relevant results (50+)",
+        "Presents title and score for matching stories",
+        "Uses case-insensitive regex matching"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Get me the comments on the top HN story right now.",
+      "expected_output": "Should first fetch top story ID from topstories endpoint, then fetch story details to get kids (comment IDs), then fetch each top-level comment. Should present comment author and text for each top-level comment.",
+      "assertions": [
+        "Fetches top story ID from /v0/topstories.json",
+        "Fetches story details to get kids array",
+        "Fetches each top-level comment by ID",
+        "Presents comment author (by) and text",
+        "Handles null/missing fields gracefully"
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Look up the HN profile for user 'pg'.",
+      "expected_output": "Should use the user endpoint with the username. Should present karma, account creation date (converted from Unix timestamp), bio, and number of submissions.",
+      "assertions": [
+        "Uses /v0/user/pg.json endpoint",
+        "Presents karma score",
+        "Presents account creation date",
+        "Presents user bio",
+        "Shows count of submissions"
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "What are the latest Ask HN posts?",
+      "expected_output": "Should use the askstories endpoint to fetch Ask HN story IDs, then fetch details for each. Should present title, score, and comment count (descendants) for the top Ask HN posts.",
+      "assertions": [
+        "Uses /v0/askstories.json endpoint",
+        "Fetches item details for each story ID",
+        "Presents title and score",
+        "Includes comment count (descendants)",
+        "Shows multiple Ask HN posts"
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "Find me Show HN projects with over 100 upvotes.",
+      "expected_output": "Should use the showstories endpoint, fetch details for a batch of stories, and filter by score >= 100 using jq select(). Should present title, score, and URL for matching stories.",
+      "assertions": [
+        "Uses /v0/showstories.json endpoint",
+        "Fetches details for a reasonable batch of stories",
+        "Filters by score >= 100 using jq",
+        "Presents title, score, and URL",
+        "Handles stories without a URL"
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "I want to post this on Bluesky: write a summary of the top 3 HN stories today.",
+      "expected_output": "Should fetch the top 3 stories from /v0/topstories.json with full details. Should then hand off to the social-content or bluesky skill to format the post. Should NOT attempt to post directly — that is outside the hackernews skill's scope.",
+      "assertions": [
+        "Fetches top 3 stories with title, score, and URL",
+        "Recognizes posting to Bluesky is outside this skill's scope",
+        "Defers to the appropriate skill for social posting",
+        "Provides story data in a format useful for the other skill"
+      ],
+      "files": []
+    }
+  ]
+}

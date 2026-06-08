@@ -1,0 +1,75 @@
+---
+title: Overview
+---
+
+# The job lane
+
+Chat is request/response: you type, the agent replies, the turn ends. The **job lane** is the other half of the runtime — a durable, SQLite-backed task board plus an out-of-process **dispatcher** that runs skillets in the background, one OS process per job. It's how `skillet_agent` does work that is long-running, multi-step, scheduled, or kicked off by someone who isn't watching a terminal.
+
+A job runs the exact same skillet machinery as `chat`/`run`. The difference is *orchestration*: jobs are queued on a board, picked up by the dispatcher, executed as `run` workers, and their results are validated and persisted.
+
+## The pieces
+
+| Piece | What it is |
+|---|---|
+| **Job** | One unit of background work — a title + body (the task prompt) assigned to one agent in a skillet. |
+| **Crew** | A graph (DAG) of jobs with parent/child dependencies, instantiated together from a [job template](/jobs/job-templates). |
+| **Board** | The SQLite database of all jobs, runs, links, events, and comments. |
+| **Dispatcher** | A long-running process that claims `ready` jobs and spawns a worker for each. See [Dispatcher](/jobs/dispatcher). |
+| **Schedule** | A recurring recipe (template + inputs + cadence) that the dispatcher materializes into crews over time. See [Schedules](/jobs/schedules). |
+
+You interact with all of this through the [`jobs` CLI](/jobs/cli), the in-chat [slash commands](/cli/slash-commands#job-commands) (`/jobs`, `/show`, `/comment`, `/unblock`), or the [web client](/web-client/overview).
+
+## The board
+
+The board is a single SQLite file, default `./outputs/.skillet_jobs.sqlite` (override with the `SKILLET_JOB_DB` env var). It runs in WAL mode with foreign keys on, so the dispatcher, CLI, chat slash commands, and web server can all read and write it concurrently.
+
+It holds a handful of tables: `jobs`, `job_runs` (one row per execution attempt), `job_links` (the parent/child DAG), `job_events` (lifecycle log), `job_comments`, and a single-row `dispatcher_state` heartbeat.
+
+## Job lifecycle
+
+Every job has a status:
+
+| Status | Meaning |
+|---|---|
+| `triage` | Created but not yet routed. |
+| `todo` | Waiting on a parent to finish. |
+| `ready` | Eligible to be claimed by the dispatcher. |
+| `running` | A worker is currently executing it. |
+| `blocked` | The worker asked a human to intervene (e.g. needs input or approval). |
+| `done` | Finished successfully. |
+| `archived` | Soft-deleted. |
+
+A job with no parents starts `ready`; a job with parents starts `todo` and is promoted to `ready` only once **all** its parents are `done`. The dispatcher claims `ready` jobs atomically, marks them `running`, and on success they go to `done` — which in turn promotes any children that were waiting.
+
+Each execution attempt is a **run**. A run ends with an outcome: `completed`, `blocked`, `crashed`, `timed_out`, or `gave_up`. Crashed runs are retried up to the job's `maxRetries` (default 2); once retries are exhausted the job is given up.
+
+## Results and validation
+
+A job can declare a `result_schema` (a small JSON-Schema subset) in its template. When the worker calls its `job_complete` tool, the structured metadata it returns is validated against that schema *before* the job is marked done — if it doesn't match, `job_complete` returns an error and the model is expected to try again. Result metadata is capped at 64 KB. This is how a crew passes typed data from a parent job to its children (the board, not the chat transcript, is the data channel).
+
+## Workspaces
+
+Each job runs in a working directory determined by its `workspace`:
+
+- `scratch` (default) — a fresh temp directory, deleted when the worker exits.
+- `dir:<relative-path>` — a persistent directory (resolved relative to the template), good for deliverables you want to keep and serve as artifacts.
+- `worktree` — reserved; not yet supported by the dispatcher (it throws for anything other than `scratch`/`dir:`).
+
+## How a job actually runs
+
+When the dispatcher claims a job, it spawns a worker equivalent to:
+
+```bash
+npx tsx ./src/cli.ts run -c <skilled_crew.yaml> "<job body>" \
+  --job-id <jobId> --session-name <jobId>_<runId>
+```
+
+Because the worker is a normal `run` with `--job-id` set, it writes the same JSONL [session log](/concepts/sessions-and-logs) as live chat — which is why you can follow a running job with `log stream` or watch it in the web client. The `--job-id` flag also attaches a small **worker toolset** to the agent: `job_show`, `job_complete`, `job_block`, `job_heartbeat`, and `job_comment`. The worker is instructed to call `job_show` first and to finish with either `job_complete` (success, with structured metadata) or `job_block` (needs a human).
+
+## Next
+
+- [.job_workflow.yaml](/jobs/job-templates) — define a crew and its inputs.
+- [Dispatcher](/jobs/dispatcher) — run the queue, set budget caps, roll up cost.
+- [Schedules](/jobs/schedules) — run a template on a recurring cadence.
+- [CLI reference](/jobs/cli) — every `jobs` command and flag.

@@ -1,0 +1,68 @@
+---
+title: Dispatcher
+---
+
+# Dispatcher
+
+The dispatcher is the process that actually runs the [board](/jobs/overview). Jobs sitting in `ready` do nothing until a dispatcher is running — it is the thing that claims them and spawns workers. It does **no agent work itself**: every tick is pure bookkeeping plus `spawn()`ing worker processes.
+
+Start one in the foreground:
+
+```bash
+npx tsx ./src/cli.ts jobs dispatcher
+# or, in watch mode during development:
+npm run dev:jobs:dispatcher
+```
+
+Leave it running (a terminal, a `tmux` pane, a systemd unit, a container) for as long as you want jobs to execute. The [web client](/web-client/overview) does **not** run the dispatcher — you run it separately alongside the web server.
+
+## The tick loop
+
+The dispatcher wakes on a fixed interval (default every 1000 ms) and on each tick:
+
+1. **Heartbeat** — writes a liveness timestamp to `dispatcher_state` so other processes can tell it's alive.
+2. **Materialize schedules** — turns any due [schedules](/jobs/schedules) into crews (default sweep every 1000 ms).
+3. **Reclaim stale runs** — a job stuck `running` whose worker PID is dead *and* whose heartbeat is stale (default 4 h) is reclaimed and retried.
+4. **Claim & launch** — if under budget, atomically claims `ready` jobs up to the concurrency cap and spawns a worker for each.
+
+## Concurrency and worker processes
+
+At most `--max-in-progress` jobs (default 8) run at once. For each claimed job the dispatcher spawns:
+
+```bash
+npx tsx ./src/cli.ts run -c <skilled_crew.yaml> "<job body>" \
+  --job-id <jobId> --session-name <jobId>_<runId>
+```
+
+with `SKILLET_JOB_ID` and `SKILLET_JOB_DB` in the worker's environment and `cwd` set to the job's [workspace](/jobs/overview#workspaces). When a worker exits, the dispatcher interprets it:
+
+- Clean `job_complete` / `job_block` → nothing more to do.
+- Exit 0 but **no** terminal tool call → treated as a protocol violation and retried (up to `maxRetries`).
+- Non-zero exit / crash → retried, or given up once retries are exhausted.
+
+## Budget cap
+
+To stop a runaway crew from spending without bound, the dispatcher supports a rolling-window cost cap:
+
+```bash
+npx tsx ./src/cli.ts jobs dispatcher --budget-cap-usd 5 --budget-window-hours 24
+```
+
+Once spend within the window reaches the cap, the dispatcher **stops claiming new jobs** (in-flight runs are allowed to finish). The flags default to the `SKILLET_JOB_BUDGET_USD` and `SKILLET_JOB_BUDGET_WINDOW_HOURS` env vars; with no cap set, the guardrail is off.
+
+## Flags
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--max-in-progress <n>` | `8` | Maximum jobs running concurrently. |
+| `--tick-interval-ms <ms>` | `1000` | How often the loop wakes. |
+| `--budget-cap-usd <n>` | env `SKILLET_JOB_BUDGET_USD`, else off | Stop claiming new jobs once windowed spend hits this. |
+| `--budget-window-hours <h>` | env `SKILLET_JOB_BUDGET_WINDOW_HOURS`, else `24` | Rolling window for the budget cap. |
+
+## Cost rollup
+
+After each worker exits, the dispatcher rolls that run's model spend out of the [cost tracker](/concepts/caching-and-cost). Because workers run with `--session-name <jobId>_<runId>`, their cost buckets are attributable per run; the rolled-up `cost_spent` / `cost_saved` are persisted on the run row and surfaced by [`jobs cost`](/jobs/cli#jobs-cost).
+
+## Checking it's alive
+
+The board carries a single-row heartbeat. Anything reading the board (the web client's dispatcher-status indicator, for example) considers the dispatcher "running" when the last tick was under ~5 seconds ago. If jobs are stuck in `ready` and never move, the first thing to check is whether a dispatcher is actually running.

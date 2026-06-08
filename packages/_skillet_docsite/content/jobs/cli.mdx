@@ -1,0 +1,91 @@
+---
+title: CLI reference
+---
+
+# `jobs` CLI reference
+
+The `jobs` command group manages the [board](/jobs/overview). Run any of these from `packages/_skillet_agent` via `npx tsx ./src/cli.ts jobs <subcommand>`. They all read and write the SQLite board at `SKILLET_JOB_DB` (default `./outputs/.skillet_jobs.sqlite`).
+
+| Command | Purpose |
+|---|---|
+| [`jobs create`](#jobs-create) | Instantiate a template and commit the crew to the board. |
+| [`jobs list`](#jobs-list) | List jobs on the board. |
+| [`jobs cost`](#jobs-cost) | Roll up model spend across the board. |
+| [`jobs show <id>`](#jobs-show) | Print one job's full detail. |
+| [`jobs comment <id> <text>`](#jobs-comment) | Append a comment to a job. |
+| [`jobs unblock <id>`](#jobs-unblock) | Move a blocked job back to `ready`. |
+| [`jobs clear`](#jobs-clear) | Delete every row on the board. |
+| [`jobs dispatcher`](/jobs/dispatcher) | Run the queue (documented under [Dispatcher](/jobs/dispatcher)). |
+| [`jobs schedules …`](/jobs/schedules) | Manage recurring schedules (documented under [Schedules](/jobs/schedules)). |
+
+## `jobs create`
+
+```bash
+npx tsx ./src/cli.ts jobs create \
+  -t ./data/crew_news_brief/crew_news_brief.job_workflow.yaml \
+  --input '{"topic":"rust web frameworks"}'
+```
+
+Renders the [template](/jobs/job-templates) with the supplied inputs and commits the resulting crew. The jobs land `ready` (or `todo` if they have parents); a running [dispatcher](/jobs/dispatcher) picks them up.
+
+| Flag | Required | Default | Purpose |
+|---|---|---|---|
+| `-t, --template <path>` | yes | — | Path to the `.job_workflow.yaml`. |
+| `--input <json>` | no | `{}` | JSON object of template inputs. |
+| `--user <name>` | no | `user_cli` | Creator recorded on the jobs. |
+
+## `jobs list`
+
+```bash
+npx tsx ./src/cli.ts jobs list
+npx tsx ./src/cli.ts jobs list -s running
+npx tsx ./src/cli.ts jobs list -a research_agent
+```
+
+| Flag | Purpose |
+|---|---|
+| `-s, --status <status>` | Filter by status: `triage`, `todo`, `ready`, `running`, `blocked`, `done`, `archived`. |
+| `-a, --assignee <name>` | Filter by the agent assigned to the job. |
+
+`npm run dev:jobs:list:watch` re-runs this every second for a live board view.
+
+## `jobs cost`
+
+```bash
+npx tsx ./src/cli.ts jobs cost            # grouped by skillet (default)
+npx tsx ./src/cli.ts jobs cost --by job   # grouped by job
+```
+
+Aggregates the per-run cost rolled up by the dispatcher (see [Dispatcher › Cost rollup](/jobs/dispatcher#cost-rollup)). `--by` accepts `skillet` (default) or `job`.
+
+## `jobs show`
+
+```bash
+npx tsx ./src/cli.ts jobs show <jobId>
+```
+
+Prints the job's body, status, run history, lifecycle events, and comments. (The same data backs the `/show` [chat slash command](/cli/slash-commands#job-commands).)
+
+## `jobs comment`
+
+```bash
+npx tsx ./src/cli.ts jobs comment <jobId> "please use the EU sources only"
+```
+
+Appends a user comment to the job — visible to the worker via its `job_show` tool and in the web inbox.
+
+## `jobs unblock`
+
+```bash
+npx tsx ./src/cli.ts jobs unblock <jobId>
+```
+
+Moves a `blocked` job back to `ready` so the dispatcher can re-claim it. Use after you've addressed whatever caused the worker to call `job_block` (often by adding a comment first).
+
+## `jobs clear`
+
+```bash
+npx tsx ./src/cli.ts jobs clear --yes
+```
+
+Deletes **every** row on the board. Without `--yes` it only prints a warning and does nothing; pass `--yes` to actually wipe it. There is no undo — this is a development convenience, not something to run against a board you care about.

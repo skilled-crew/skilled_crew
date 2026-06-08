@@ -1,0 +1,72 @@
+---
+title: AGENTS.md
+---
+
+# `AGENTS.md`
+
+The orchestrator's prompt. Each agent in a `.skilled_crew.yaml` points to one `AGENTS.md` via `instructionsPath`. The file is YAML frontmatter (metadata, model choice) plus a markdown body (the system prompt).
+
+`AGENTS.md` is optional — set `instructionsPath: null` and the agent runs with no extra instructions beyond its skills. But for any non-trivial skillet, this is where you tell the orchestrator how to triage.
+
+## Shape
+
+```markdown
+---
+name: todo_list
+description: "Manages a todo list. Handles creating, listing, completing, and deleting tasks."
+model: 'openai/gpt-4.1-mini'
+---
+
+# Todo List Agent
+
+You are an orchestrating agent for a todo list system. Your job is to
+interpret the user's intent and route it to the correct skill sub-agent.
+
+## Routing Rules
+
+- Add/record/remember something → `create-task`
+- See/check/review tasks → `list-tasks`
+- Mark done/finish/check off → `complete-task`
+- Remove/delete/discard → `delete-task`
+
+## Response Format
+
+- After a write operation: confirm in one sentence, then show the updated list.
+- Keep responses short. No filler.
+```
+
+## Frontmatter
+
+| Field | Required | Purpose |
+|---|---|---|
+| `name` | recommended | Display name. Surfaces in `/help` and step events. |
+| `description` | recommended | One-sentence summary of what this agent does. |
+| `model` | no | Model spec in `<provider>/<model>` form (e.g. `openai/gpt-4.1-nano`, `openai/gpt-4.1-mini`, `lmstudio/liquid/lfm2-1.2b`). One of three places the runtime picks up the model — see [Models](/models) for precedence. |
+
+The frontmatter is loosely parsed; extra fields are ignored. Use the model field if you want a specific skillet to run on a non-default model without setting environment variables.
+
+## Body
+
+The markdown body becomes the agent's system prompt. Practical patterns:
+
+### 1. Routing rules
+
+The orchestrator's only real job is to pick a skill. Lists like the one above are the most compact way to teach it intent matching. Add explicit counter-examples for skills the LLM tends to over-use.
+
+### 2. Response format
+
+The body is also where you constrain the assistant's voice — short, no filler, no apologies, no markdown bullets, whatever you want.
+
+### 3. Out-of-scope handling
+
+Be explicit about what the agent can't do. Otherwise the LLM will invent capabilities (fake due dates, imaginary tags) rather than say "I can't."
+
+### 4. Multi-step instructions
+
+If a request usually requires multiple skill calls (e.g. "delete the buy milk task" requires `list-tasks` → resolve ID → `delete-task`), spell that out. The orchestrator follows recipes; it doesn't invent them.
+
+## Multi-agent skillets
+
+When `.skilled_crew.yaml` defines more than one agent, each agent has its own `AGENTS.md`. The agent named in `entryPointAgent` gets the user's first message; it can hand off to any other agent named in `agents`. The handoff prompts come from each target agent's `description` field.
+
+For a multi-agent example see the multi-agent samples under [`packages/_skillet_agent/data/skillets/`](https://github.com/skilled-crew/skilled_crew/tree/main/packages/_skillet_agent/data/skillets).

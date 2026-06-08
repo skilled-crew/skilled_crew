@@ -1,0 +1,113 @@
+---
+title: SKILL.md
+---
+
+# `SKILL.md`
+
+Each skill folder contains exactly one `SKILL.md` file: YAML frontmatter + markdown body. The frontmatter is the public contract (name, description, tool restrictions); the body is the system prompt for that skill's sub-agent.
+
+Schema defined by `SkillHeaderZod` in [`src/config/skill/skill_zod.ts`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/src/config/skill/skill_zod.ts).
+
+## Frontmatter
+
+```yaml
+---
+name: create-task
+description: Create a new task in the user's todo list.
+license: MIT
+compatibility: [openai, anthropic]
+allowed-tools: Bash(node:*) Bash(npx:*)
+metadata:
+  team: platform
+  version: 2
+---
+```
+
+| Field | Required | Type | Constraints |
+|---|---|---|---|
+| `name` | yes | string | 1–64 chars, `[a-z0-9_-]+` only. Must match the skill folder name and the `name:` referenced in `.skilled_crew.yaml`. |
+| `description` | yes | string | 1–1024 chars. Used by the orchestrator to decide whether to route to this skill — write it like an API docstring. |
+| `license` | no | string | Free-form (e.g. `MIT`, `Apache-2.0`). Informational only. |
+| `compatibility` | no | string[] | Markers like `openai`, `anthropic`. Informational; nothing in the runtime checks this today. |
+| `allowed-tools` | no | string | Restricts the tools this skill agent may invoke. See below. |
+| `metadata` | no | object | Arbitrary key/value pairs. Not interpreted by the runtime; useful for your own automation. |
+
+## Body
+
+Everything after the frontmatter is the skill agent's system prompt. Three sections show up in nearly every working skill:
+
+1. **What this skill does** — one paragraph, written for the LLM.
+2. **When to use it** — explicit triggers (and counter-examples telling the LLM when *not* to use it).
+3. **Operation** — the exact shell command(s) the LLM should run. Use a fenced code block; the LLM will read this verbatim.
+
+Example body (the real `create-task` skill, abbreviated):
+
+````markdown
+# Create Task Skill
+
+This skill adds a new task to the user's todo list. Each task is assigned a
+unique auto-incrementing ID and starts with an incomplete status.
+
+## When to Use
+
+Use this skill when the user wants to:
+
+- Add a new item to their todo list
+- Record something they need to do later
+
+Do NOT use this skill to view, complete, or remove tasks — use the
+`list-tasks`, `complete-task`, or `delete-task` skills for those.
+
+## Operation
+
+```
+npx tsx ../../_src/todo_script.ts create <description>
+```
+
+**Arguments:**
+- `<description>` — required, wrap in quotes if it contains spaces
+
+**Output:**
+```
+Task created: Buy milk
+```
+````
+
+## `allowed-tools` syntax
+
+The `allowed-tools` string is a space-separated list of tool patterns. The runtime only supports the `Bash(<command>:*)` form — it restricts the skill agent to command lines that start with `<command> `:
+
+| Pattern | Allows |
+|---|---|
+| `Bash(git:*)` | Command lines starting with `git ` |
+| `Bash(node:*) Bash(npx:*)` | Multiple patterns, space-separated — `node …` or `npx …` |
+
+Any other token (`Read`, `Write`, a bare `Bash` with no `(…)`, …) is **rejected** by the parser — these SKILL.md fields exist in other agent runtimes, but `skillet_agent` throws `Unsupported tool` rather than silently ignoring them. Omit `allowed-tools` entirely and no allowlist is applied (the command still runs in `cwd = skill folder` with a 30 s timeout).
+
+The allowlist is enforced on every `run_command_line` call. See [Security](/advanced/security) for the full set of guardrails.
+
+## Scripts and references
+
+Two optional subfolders inside a skill folder are conventional:
+
+```
+my-skill/
+├── SKILL.md
+├── scripts/          # executables the skill can call via `run_command_line`
+│   └── do_thing.sh
+└── references/       # markdown the skill can pull in via `load_skill_resources`
+    └── api_reference.md
+```
+
+`references/` is loaded on-demand by the LLM via a sandboxed `load_skill_resources` tool — path traversal is blocked. Use it for long docstrings or API references that would bloat the system prompt.
+
+## Tools the skill agent has
+
+Every skill agent ships with two built-in tools:
+
+| Tool | Purpose |
+|---|---|
+| `run_command_line` | Runs a shell command in the skill folder. Input: `{ reason: string, commandLine: string }`. 30 s timeout. Subject to `allowed-tools`. |
+| `load_skill_resources` | Reads a markdown file under `references/`. Subject to path-traversal sandbox. |
+
+Plus any [MCP server](/configuration/mcp-servers) tools wired on the parent agent.

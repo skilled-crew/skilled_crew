@@ -1,0 +1,94 @@
+---
+title: Models
+---
+
+# Models
+
+`skillet_agent` runs against any [OpenAI-compatible](https://platform.openai.com/docs/api-reference) endpoint. Two providers are wired today: **OpenAI** (the default) and **LMStudio** (a local OpenAI-compatible server). Models are named with the explicit `<provider>/<model>` convention so the runtime can route requests without guessing — see [`UtilsAi.parseProviderModel`](/api).
+
+## Picking a model
+
+The runner looks for a model spec in this order (first hit wins):
+
+1. **`SKILLET_MODEL_RUNNER` env var** — global override, full `<provider>/<model>` form.
+2. **`model:` in the agent's `AGENTS.md` frontmatter** — per-skillet, same format.
+3. **`openai/gpt-4.1-nano`** — built-in default.
+
+For the eval grader, the equivalent var is `SKILLET_MODEL_EVAL` (same fallback chain, same default).
+
+## Model spec format
+
+Every model spec is `<provider>/<model>`. The string is split on the **first** `/`; everything after it is the model id passed verbatim to the OpenAI SDK. That lets LMStudio's own namespaced ids (like `liquid/lfm2-1.2b`) ride along:
+
+| Spec | Provider | Model id sent to the SDK |
+|---|---|---|
+| `openai/gpt-4.1-nano` | `openai` | `gpt-4.1-nano` |
+| `openai/gpt-4.1` | `openai` | `gpt-4.1` |
+| `lmstudio/liquid/lfm2-1.2b` | `lmstudio` | `liquid/lfm2-1.2b` |
+| `lmstudio/google/gemma-3-4b-it` | `lmstudio` | `google/gemma-3-4b-it` |
+
+Unknown providers or bare model names (no `/`) throw at startup with an actionable error.
+
+## Base URLs
+
+Each provider has a default endpoint and an optional override:
+
+| Provider | Default base URL | Override env var |
+|---|---|---|
+| `openai` | OpenAI SDK default (`https://api.openai.com/v1`) | `OPENAI_BASE_URL` |
+| `lmstudio` | `http://localhost:1234/v1` | `LMSTUDIO_BASE_URL` |
+
+Set the override when you want to point at a proxy, gateway, or remote LMStudio host. Both vars are optional; leave them unset to use the defaults.
+
+## OpenAI
+
+Set `OPENAI_API_KEY` in `.env` and you're set. Common model choices:
+
+| Spec | When to pick it |
+|---|---|
+| `openai/gpt-4.1-nano` | Default. Cheapest, fastest, fine for routing and most skills. |
+| `openai/gpt-4.1-mini` | When the nano starts ad-libbing or missing nuance. |
+| `openai/gpt-4.1` | When the mini still falls short — usually long context or complex multi-step reasoning. |
+
+Older models work too — anything the OpenAI SDK accepts (`openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/gpt-3.5-turbo`, etc.).
+
+## LMStudio
+
+[LMStudio](https://lmstudio.ai/) runs a local OpenAI-compatible server. Start it, load a model, leave it running on the default port (`1234`). Then point the runtime at it:
+
+```bash
+export SKILLET_MODEL_RUNNER=lmstudio/liquid/lfm2-1.2b
+npm run dev:chat:todo_list
+```
+
+Or set the model in your `AGENTS.md`:
+
+```yaml
+---
+name: todo_list
+description: Todo list manager.
+model: lmstudio/liquid/lfm2-1.2b
+---
+```
+
+The runtime hits `http://localhost:1234/v1` (or `LMSTUDIO_BASE_URL` if set) and treats the response as if it were OpenAI's. No API key required. Cost-tracking entries are still written but the dollar amounts will be zero.
+
+Tested LMStudio models include `lmstudio/liquid/lfm2-1.2b` and `lmstudio/google/gemma-3-4b-it`. Anything LMStudio loads and serves should work — the model id after `lmstudio/` is sent through unchanged.
+
+## Streaming
+
+Pass `-s` to `chat` or `run` to stream tokens. Both providers support it. The events that come out of the async generator are the same in both modes — streaming just emits `text` events incrementally as tokens arrive instead of in one chunk at the end.
+
+```bash
+npx tsx ./src/cli.ts chat -c ./data/skillets/todo_list.skilled_crew.yaml -s
+```
+
+## What's not supported
+
+| | Status |
+|---|---|
+| Anthropic (Claude) | No adapter. The `anthropic/*` provider prefix is reserved by the convention but not wired. |
+| Google Gemini API (`generativelanguage.googleapis.com`) | No adapter. Run Gemini models locally through LMStudio with `lmstudio/google/<model>`. |
+| Ollama | No adapter, though Ollama exposes an OpenAI-compatible endpoint — a small custom adapter would work. |
+
+If you want one of these, the adapter point is [`UtilsAi.parseProviderModel`](/api) and [`UtilsAi.getOpenAiClient`](/api). Add a new provider entry and another `baseURL`.

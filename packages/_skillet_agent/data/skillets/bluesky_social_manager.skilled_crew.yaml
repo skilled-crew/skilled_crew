@@ -1,0 +1,25 @@
+version: "1.0"
+id: "bluesky_social_manager"
+
+commands:
+  - name: french
+    filePath: ../dot_claude/commands/french.command.md
+  - name: like_buildinpublic
+    filePath: ../dot_claude/commands/like_buildinpublic.command.md
+  - name: post_hn_on_bluesky
+    filePath: ../dot_claude/commands/post_hn_on_bluesky.command.md
+  - name: caveman
+    filePath: ../dot_claude/commands/caveman.command.md
+
+agents:
+  bluesky_social_manager:
+    instructionsPath: ../dot_claude/agents/bluesky_social_manager.md
+    mcp_servers:
+      - filePath: ../dot_claude/mcp_servers/datetime_mcp.json
+    skills:
+      - name: bluesky
+        folderPath: ../dot_claude/skills/bluesky
+      - name: hackernews
+        folderPath: ../dot_claude/skills/hackernews
+      - name: notion-api
+        folderPath: ../dot_claude/skills/notion-api

@@ -1,0 +1,8 @@
+{
+    "name": "dotclaude_business_analyst",
+    "private": true,
+    "type": "commonjs",
+    "dependencies": {
+        "md-to-pdf": "^5.2.5"
+    }
+}

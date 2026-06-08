@@ -1,0 +1,5 @@
+name: sample-eval
+description: A sample evaluation
+cases:
+  - input: "What are my tasks?"
+    expected: "list of tasks"

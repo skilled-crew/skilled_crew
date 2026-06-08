@@ -1,0 +1,108 @@
+---
+title: .skilled_crew.yaml
+---
+
+# `.skilled_crew.yaml`
+
+The top-level configuration file. Everything else — agents, skills, commands, MCP servers, the script runtime — is referenced from here. Schema defined by `SkilledCrewYamlConfigZod` in [`src/config/skilled_crew_yaml/skilled_crew_yaml_zod.ts`](https://github.com/skilled-crew/skilled_crew/blob/main/packages/_skillet_agent/src/config/skilled_crew_yaml/skilled_crew_yaml_zod.ts).
+
+All paths inside the YAML are resolved **relative to the `.skilled_crew.yaml` file itself**.
+
+## Full shape
+
+```yaml
+version: "1.0"            # Schema version
+id: "my_skillet"          # Stable identifier (sessions, cache, cost)
+
+commands:                 # Optional. User-defined slash commands.
+  - name: french
+    filePath: ../dot_claude/commands/french.command.md
+
+entryPointAgent: null     # Optional. Required when >1 agent.
+
+agents:                   # Map of agent name → definition.
+  my_agent:
+    instructionsPath: ../my_bot/AGENTS.md
+    mcp_servers:
+      - filePath: ../dot_claude/mcp_servers/datetime_mcp.json
+    skills:
+      - name: my-skill
+        folderPath: ../my_bot/skills/my-skill
+
+script_runtime:           # Where skill scripts run.
+  kind: local             # "local" | "container"
+  dockerfile: null        # Required if kind = "container"
+```
+
+## Top-level keys
+
+| Key | Type | Default | Purpose |
+|---|---|---|---|
+| `version` | string | `"1.0"` | Schema version. Bumped on breaking changes. |
+| `id` | string | `"skillet-id-unspecified"` | Used in session paths, cache keys, and cost-tracking buckets. Make it unique per skillet so the [cost tracker](/concepts/caching-and-cost) can roll up calls by skillet. |
+| `commands` | array | `[]` | Slash commands available during `chat`. Each entry has `name` (what the user types after `/`) and `filePath` (path to a [`.command.md`](/configuration/command-md) file). |
+| `entryPointAgent` | string \| null | `null` | Which agent receives user input first. Required when `agents` has more than one entry. Ignored when there's exactly one agent. |
+| `agents` | map | `{}` | Map of agent name → agent definition. See below. |
+| `script_runtime` | object | `{ kind: 'local', dockerfile: null }` | Where skill scripts execute. See below. |
+
+## `agents.<name>`
+
+Each entry under `agents` defines one agent. The map key is the agent name (used by `entryPointAgent` and in handoffs).
+
+| Key | Type | Default | Purpose |
+|---|---|---|---|
+| `instructionsPath` | string \| null | `null` | Path to the [`AGENTS.md`](/configuration/agents-md) instructions file. If null, the agent runs with only its skills. |
+| `mcp_servers` | array | `[]` | [MCP servers](/configuration/mcp-servers) exposed as tools to this agent. Each entry has a `filePath` to a JSON config. |
+| `skills` | array | `[]` | [Skills](/configuration/skill-md) available to this agent. Each becomes a callable sub-agent. Each entry has a `name` (must match the skill folder name and the `name:` in `SKILL.md`) and a `folderPath`. |
+
+## `script_runtime`
+
+| Key | Type | Default | Purpose |
+|---|---|---|---|
+| `kind` | `"local"` \| `"container"` | `"local"` | `local`: spawn skill scripts as child processes on the host. `container`: run them inside a Docker container built from `dockerfile`. See [Container runtime](/advanced/container-runtime). |
+| `dockerfile` | string \| null | `null` | Path to a Dockerfile, relative to the `.skilled_crew.yaml`. Required when `kind: container`, ignored otherwise. |
+
+## Validation
+
+The runtime parses your YAML with this Zod schema and rejects anything off-spec — extra keys included (the schema is `strict()`). The same Zod schema is exported as a [JSON Schema for VSCode](/configuration/json-schema) so editing your `.skilled_crew.yaml` gets autocomplete and inline validation.
+
+## Two real examples
+
+**Minimal** — one agent, one set of skills, default everything else:
+
+```yaml
+version: "1.0"
+id: "todo_list"
+
+agents:
+  todo_list_agent:
+    instructionsPath: ../dotclaude_todo_list/AGENTS.md
+    skills:
+      - { name: create-task,   folderPath: ../dotclaude_todo_list/skills/create-task }
+      - { name: list-tasks,    folderPath: ../dotclaude_todo_list/skills/list-tasks }
+      - { name: complete-task, folderPath: ../dotclaude_todo_list/skills/complete-task }
+      - { name: delete-task,   folderPath: ../dotclaude_todo_list/skills/delete-task }
+```
+
+**With commands and an MCP server**:
+
+```yaml
+version: "1.0"
+id: "bluesky_social_manager"
+
+commands:
+  - { name: french,    filePath: ../dot_claude/commands/french.command.md }
+  - { name: caveman,   filePath: ../dot_claude/commands/caveman.command.md }
+
+agents:
+  bluesky_agent:
+    instructionsPath: ../dotclaude_bluesky/AGENTS.md
+    mcp_servers:
+      - { filePath: ../dot_claude/mcp_servers/datetime_mcp.json }
+    skills:
+      - { name: bluesky,     folderPath: ../dotclaude_bluesky/skills/bluesky }
+      - { name: hackernews,  folderPath: ../dotclaude_bluesky/skills/hackernews }
+      - { name: notion-api,  folderPath: ../dotclaude_bluesky/skills/notion-api }
+```
+
+More samples in [`packages/_skillet_agent/data/skillets/`](https://github.com/skilled-crew/skilled_crew/tree/main/packages/_skillet_agent/data/skillets).

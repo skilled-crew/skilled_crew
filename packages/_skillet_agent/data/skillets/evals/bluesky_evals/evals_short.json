@@ -1,0 +1,29 @@
+{
+    "skill_name": "bluesky",
+    "evals": [
+        {
+            "id": 1,
+            "prompt": "Post 'Hello Bluesky! Testing my new AI agent.' to my Bluesky account.",
+            "expected_output": "Should check auth status first with `npx bsky_client --json status`. Should then run `npx bsky_client --json posts create \"Hello Bluesky! Testing my new AI agent.\"`. Should confirm the post was created and return the AT-URI of the new post.",
+            "assertions": [
+                "Checks auth status before posting",
+                "Uses `npx bsky_client --json posts create` command",
+                "Passes the exact post text as argument",
+                "Returns or displays the AT-URI of the created post"
+            ],
+            "files": []
+        },
+        {
+            "id": 2,
+            "prompt": "Show me my last 5 posts on Bluesky.",
+            "expected_output": "Should run `npx bsky_client --json posts list --limit 5`. Should display the posts with their text, timestamp, and AT-URI.",
+            "assertions": [
+                "Uses `npx bsky_client --json posts list` command",
+                "Passes `--limit 5` flag",
+                "Displays post text and metadata",
+                "Uses --json flag for structured output"
+            ],
+            "files": []
+        }
+    ]
+}

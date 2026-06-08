@@ -1,0 +1,17 @@
+version: "1.0"
+id: "business_analyst"
+
+commands:
+  - name: french
+    filePath: ../dot_claude/commands/french.command.md
+
+agents:
+  chat_with_bsky_agent:
+    instructionsPath: ../dotclaude_business_analyst/AGENTS.md
+    skills:
+      - name: analyst
+        folderPath: ../dotclaude_business_analyst/skills/analyst
+      - name: modeler
+        folderPath: ../dotclaude_business_analyst/skills/modeler
+      - name: planner
+        folderPath: ../dotclaude_business_analyst/skills/planner

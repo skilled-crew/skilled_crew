@@ -1,0 +1,92 @@
+---
+title: Caching and cost
+---
+
+# Caching and cost
+
+Every OpenAI request the runtime makes flows through two SQLite-backed middlewares: a **response cache** and a **per-call cost tracker**. Both ship out of the box, both live under `./outputs/`, and both are safe to delete at any time.
+
+## The request pipeline
+
+```
+   OpenAI SDK
+       │
+       ▼
+   ┌─────────────────────────┐
+   │  openai-cost tracker    │  record { bucketId, model, tokens, cost }
+   └──────────┬──────────────┘
+              ▼
+   ┌─────────────────────────┐
+   │  openai-cache           │  hit?  →  return cached response
+   └──────────┬──────────────┘  miss?  →  fall through
+              ▼
+        real OpenAI API
+```
+
+Wiring lives in [`UtilsAi.getOpenAiClient`](/api/classes/AgentRunner). Each `OpenAI` instance gets a `fetch` that runs both layers.
+
+## Response cache
+
+- **Backend:** SQLite via `@keyv/sqlite`, wrapped by [`openai-cache`](https://www.npmjs.com/package/openai-cache).
+- **File:** `./outputs/.openai_cache.sqlite`
+- **Key:** the full request payload — model, messages, tools, parameters. Two identical requests share a cache entry.
+- **Marker:** `markResponseEnabled: true` adds a custom header so you can tell if a response came from the cache.
+
+Useful for re-running the same eval suite or replaying a chat turn without burning fresh tokens.
+
+Clear it:
+
+```bash
+npm run openai_cache:clean
+# equivalent to: rm -f ./outputs/.openai_cache.sqlite
+```
+
+## Cost tracker
+
+- **Backend:** SQLite via [`openai-cost`](https://www.npmjs.com/package/openai-cost).
+- **File:** `./outputs/.openai_cost_tracker.sqlite`
+- **Bucket id:** `tracker_bucket/{userId}/{skilletId}/{sessionName}`. Each call is tagged so you can slice the data by user, skillet, and session.
+- **What it records:** model, prompt/completion tokens, computed cost, timestamp, bucket.
+
+Because background [job](/jobs/overview) workers run with `--session-name <jobId>_<runId>`, their spend is attributable per run — that is what the [`jobs cost`](/jobs/cli#jobs-cost) command and the dispatcher's per-run cost rollup build on.
+
+The skillet ID comes from the `id:` field in your `.skilled_crew.yaml` — set it to something distinct (e.g. `bluesky_social_manager`, not `skillet-id-unspecified`) so the tracker can group calls.
+
+## Watching cost live
+
+There's a small terminal UI bundled with `openai-cost`:
+
+```bash
+npm run dev:cost:list:watch
+```
+
+This runs:
+
+```bash
+npx --package=openai-cost openai_cost_pp \
+  -p '{namespace}/{userId}/{skilletId}/{sessionId}' \
+  -k userId,skilletId \
+  -i ./outputs/.openai_cost_tracker.sqlite \
+  -w
+```
+
+`-w` watches the file; the UI refreshes as new calls land. `-k userId,skilletId` chooses which axes to roll up by. For a one-shot dump, run `npm run dev:cost:list` (same command without `-w`).
+
+## Clearing cost data
+
+```bash
+npm run dev:cost:clear
+# equivalent to: rm -f ./outputs/.openai_cost_tracker.sqlite
+```
+
+There's a combined "clean everything" too:
+
+```bash
+npm run clean:all
+# runs both dev:cost:clear and openai_cache:clean
+```
+
+## What's not tracked
+
+- **LMStudio calls** also flow through the same fetch wrapper, so cache hits work locally. Cost rows are still written but the dollar amounts will be zero (LMStudio is local).
+- **Calls outside the runtime** — if your skill scripts hit external APIs themselves, those costs are entirely yours to track.

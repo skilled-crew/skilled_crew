@@ -1,0 +1,121 @@
+---
+title: Evaluations
+---
+
+# Evaluations
+
+The eval framework runs a fixed list of prompts against a skillet, records what the agent did, and asks an LLM judge to score each result against expectations. Two CLI commands: `eval_run` produces traces, `eval_grade` scores them.
+
+Evals are scoped per-skillet — each suite lives in its own folder with an `evals.json` file. Both commands write into a **sibling** `<folder>_output/` directory (the eval folder path with `_output` appended), so your suite folder stays clean.
+
+## Anatomy of an eval suite
+
+```
+data/skillets/evals/
+├── bluesky_evals/
+│   └── evals.json
+└── bluesky_evals_output/          # created next to the suite folder
+    ├── eval_1_run.json            # written by eval_run
+    └── eval_1_grade.json          # written by eval_grade
+```
+
+`evals.json` declares the suite:
+
+```json
+{
+  "name": "bluesky",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Post 'Hello Bluesky! Testing my new AI agent.' to my Bluesky account.",
+      "expected_output": "Should check auth status first with `npx bsky_client --json status`. Should then run `npx bsky_client --json posts create \"...\"`. Should confirm the post was created and return the AT-URI.",
+      "assertions": [
+        "Checks auth status before posting",
+        "Uses `npx bsky_client --json posts create` command",
+        "Passes the exact post text as argument",
+        "Returns or displays the AT-URI of the created post"
+      ],
+      "files": []
+    }
+  ]
+}
+```
+
+| Field | Required | Purpose |
+|---|---|---|
+| `id` | yes | Unique integer within the suite. Used in the `eval_<id>_run.json` / `eval_<id>_grade.json` filenames. |
+| `prompt` | yes | The user message sent to the agent verbatim. |
+| `expected_output` | yes | Free-form prose describing the ideal trace. The judge gets this and scores it **0–10**. |
+| `assertions` | no (default `[]`) | Array of single-fact checks. The judge scores each one **0–10** independently. |
+| `files` | no (default `[]`) | Reserved for fixture files; not used by the current runner. |
+
+## Running a suite
+
+```bash
+npm run dev:eval:run:bluesky
+# or:
+npx tsx ./src/cli.ts eval_run \
+  -c ./data/skillets/bluesky_social_manager.skilled_crew.yaml \
+  -f ./data/skillets/evals/bluesky_evals
+```
+
+For each eval, `eval_run`:
+
+1. Spins up a fresh `AgentRunner` against the named skillet.
+2. Calls `runOneShotAsyncGenerator(context, prompt)` with streaming.
+3. Collects every step event into a `responseLog`.
+4. Measures wall-clock latency and the character count of the final result.
+5. Writes `eval_<id>_run.json` into the sibling `<folder>_output/` directory.
+
+Each output file contains the full step trace, the final result, latency, and char count — everything the judge needs.
+
+## Grading
+
+```bash
+npm run dev:eval:grade:bluesky
+# or:
+npx tsx ./src/cli.ts eval_grade -f ./data/skillets/evals/bluesky_evals
+```
+
+For each eval, `eval_grade`:
+
+1. Reads the corresponding `<folder>_output/eval_<id>_run.json`.
+2. Builds a prompt that includes the original `expected_output`, the assertion list, and the full step trace as JSON.
+3. Asks the judge LLM (default `openai/gpt-4.1-nano`, overridable via `SKILLET_MODEL_EVAL` in `<provider>/<model>` form) to return a structured grade: a **0–10** score plus a one-paragraph reason for the `expected_output`, and one score per assertion (graded in a single batched call).
+4. Writes the structured grade to `<folder>_output/eval_<id>_grade.json`.
+
+The judge model is the same plug as the runner — set `SKILLET_MODEL_EVAL=lmstudio/liquid/lfm2-1.2b` to grade with a local LMStudio model.
+
+## Reading the results
+
+Each grade file looks like:
+
+```json
+{
+  "evalId": 1,
+  "expectedOutput": {
+    "score": 9,
+    "reason": "The agent checked auth, ran posts create, and reported the AT-URI..."
+  },
+  "assertions": [
+    { "score": 10, "reason": "Auth status was checked before any write." },
+    { "score": 10, "reason": "Used the documented bsky_client posts create command." },
+    { "score":  8, "reason": "The post text matched, modulo quote escaping." },
+    { "score": 10, "reason": "Returned the AT-URI in the final response." }
+  ]
+}
+```
+
+Scores run **0–10**. A 10 is "passes cleanly"; a low score is usually "broken" — the judge's `reason` is the place to start debugging. The CLI also prints each score as `…/10` as it grades.
+
+## Iterating
+
+Typical workflow:
+
+1. Add a new eval to `evals.json`.
+2. `eval_run` to produce a fresh trace.
+3. `eval_grade` to score it.
+4. If the score is low, read the `responseLog` (use `jq` on `<folder>_output/eval_<id>_run.json`) to see where the agent went wrong.
+5. Adjust the skill's `SKILL.md` or the orchestrator's `AGENTS.md`, then re-run.
+
+The response cache means re-running an unchanged eval is cheap. Clearing the cache (`npm run openai_cache:clean`) forces fresh runs when you want to measure real cost or latency.

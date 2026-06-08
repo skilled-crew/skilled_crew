@@ -1,0 +1,78 @@
+---
+title: Slash commands
+---
+
+# Slash commands
+
+Inside `chat`, anything starting with `/` is a **slash command**. Several are built into the runtime; the rest are user-defined via [`.command.md`](/configuration/command-md) files referenced from your `.skilled_crew.yaml`.
+
+## Built-in commands
+
+| Command | Behavior |
+|---|---|
+| [`/help`](#help) | List every slash command (built-in + user-defined) with its description. |
+| [`/skills`](#skills) | List the skills available to the current agent. |
+| [`/mcp_servers`](#mcp_servers) | List attached MCP servers and the tools each one exposes. |
+| [`/compact`](#compact) | Force session compaction now. `/compact info` prints the current item count instead. |
+| [`/jobs`](#job-commands) | List the [job-lane](/jobs/overview) jobs that are ready, running, or blocked. |
+| [`/show <id>`](#job-commands) | Print the full detail of one job. |
+| [`/comment <id> <text>`](#job-commands) | Append a comment to a job. |
+| [`/unblock <id>`](#job-commands) | Move a blocked job back to ready. |
+| [`/exit`](#exit) | Quit the REPL. Closes MCP connections and exits cleanly. |
+
+Empty input — just pressing Enter — is treated as `/help`.
+
+### `/help`
+
+Lists all slash commands the runtime knows about: the built-ins plus every entry under `commands:` in your `.skilled_crew.yaml`. Each row shows the command name and its description (the `description:` field from the `.command.md` frontmatter).
+
+### `/skills`
+
+Lists every skill on the current agent, with each skill's `description` from its `SKILL.md` frontmatter. Useful when you forget which skills exist or what they're each supposed to do.
+
+### `/mcp_servers`
+
+Lists the MCP servers wired to the current agent and, for each one, the tools the server exposes. Helps diagnose "the LLM doesn't seem to have tool X" — if the server isn't listed here, it isn't attached.
+
+### `/compact`
+
+The session is automatically compacted once it grows past 40 non-user items (see [Architecture › Compaction](/concepts/architecture#compaction)). `/compact` forces it now. `/compact info` reports the current item count without compacting. Those are the only two forms — any other argument prints a usage error (there is no free-text hint).
+
+### Job commands
+
+When the [job lane](/jobs/overview) is in use, four built-ins let you inspect and nudge the board without leaving chat:
+
+| Command | Behavior |
+|---|---|
+| `/jobs` | List jobs that are ready, running, or blocked. |
+| `/show <id>` | Print one job's full detail (body, status, runs, comments). |
+| `/comment <id> <text>` | Append a user comment to a job. |
+| `/unblock <id>` | Move a blocked job back to `ready` so the dispatcher can re-claim it. |
+
+These read the same board as the [`jobs`](/jobs/cli) CLI commands (the SQLite file at `SKILLET_JOB_DB`, default `./outputs/.skillet_jobs.sqlite`).
+
+### `/exit`
+
+Closes the readline loop, closes MCP server connections, exits with code 0. `Ctrl+C` does the same, but `/exit` is the clean path.
+
+## User-defined commands
+
+User-defined commands come from `.command.md` files referenced in `.skilled_crew.yaml`:
+
+```yaml
+commands:
+  - name: french
+    filePath: ../dot_claude/commands/french.command.md
+  - name: caveman
+    filePath: ../dot_claude/commands/caveman.command.md
+```
+
+Inside chat, type `/french` (or `/french something`) and the body of `french.command.md` is sent to the orchestrator as a normal user message, with `$ARGUMENTS` substituted. See [.command.md](/configuration/command-md) for the file format.
+
+The `name` in the YAML is what the user types. `/help` lists built-ins and user commands together.
+
+## Where commands run
+
+Built-in commands short-circuit before the LLM runs — they never cost a token. User-defined commands always go through the orchestrator (and through the LLM), because the point is to get a model response shaped by the command's body.
+
+If a user-defined command's frontmatter sets `agent: <name>`, the message is routed directly to that agent in a multi-agent skillet, bypassing the entry agent.

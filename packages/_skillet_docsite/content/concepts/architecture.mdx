@@ -1,0 +1,77 @@
+---
+title: Architecture
+---
+
+# Architecture
+
+A running skillet is a small graph of LLM agents wired by the OpenAI Agents SDK. Every skillet has exactly one **entry agent** (the orchestrator) plus one **skill agent** per skill declared in the YAML. The orchestrator routes user input to whichever skill agent can answer; the skill agents run shell commands to do the real work and pass results back.
+
+## The graph
+
+```
+                    ┌──────────────────────┐
+   user input  ─►   │   Entry agent        │   ──┐
+                    │   (orchestrator)     │     │ handoff
+                    └──────────┬───────────┘     │
+                               │                 ▼
+              ┌────────────────┼──────────────── ─────────────┐
+              │                │                              │
+              ▼                ▼                              ▼
+       ┌────────────┐   ┌────────────┐   ...           ┌────────────┐
+       │ Skill A    │   │ Skill B    │                 │ Skill N    │
+       │  agent     │   │  agent     │                 │  agent     │
+       │  + tools   │   │  + tools   │                 │  + tools   │
+       └─────┬──────┘   └─────┬──────┘                 └─────┬──────┘
+             │                │                              │
+             └────────────────┴──────────────────────────────┘
+                              │  hand back
+                              ▼
+                    ┌──────────────────────┐
+                    │   Entry agent        │   ──►  final response
+                    └──────────────────────┘
+```
+
+The entry agent can hand off to any skill agent. Skill agents can hand back to the entry agent. Skill agents can also hand off to other skill agents — the wiring is full-mesh under the hood — but the typical flow is entry → skill → entry.
+
+## What runs on each turn
+
+`AgentRunner.runOneShotAsyncGenerator(context, userInput)` is the entire runtime loop. For each user message:
+
+1. **Log the input.** The raw user input is appended to a JSONL session log (see [Sessions and logs](/concepts/sessions-and-logs)).
+2. **Slash-command check.** Built-in commands (`/help`, `/skills`, `/mcp_servers`, `/compact`, `/jobs`, `/show`, `/comment`, `/unblock`, `/exit`) short-circuit before the LLM runs. User-defined `.command.md` commands are expanded into a normal prompt. See [Slash commands](/cli/slash-commands).
+3. **Run the entry agent.** The orchestrator either replies directly, calls a tool, or hands off to a skill agent.
+4. **Yield step events.** Each LLM action emits an event: `agent_start`, `agent_end`, `agent_tool_start`, `agent_tool_end`, `handoff`, or `text`. These stream out of the async generator so the CLI and web UI can render in real time.
+5. **Return the final result.** Once the agent says "done," the generator returns `{ text: string }` as the final result.
+
+The events are typed under [`AgentRunnerStepResult`](/api/type-aliases/AgentRunnerStepResult) in the API reference.
+
+## What tools a skill agent has
+
+Each skill agent is created with two built-in tools:
+
+| Tool | Purpose |
+|---|---|
+| `run_command_line` | Execute a shell command. `cwd` is set to the skill folder; 30 s timeout. Input is `{ reason: string, commandLine: string }` so the LLM has to justify each call. |
+| `load_skill_resources` | Read additional markdown from a `references/` subfolder inside the skill, if one exists. Sandboxed against path traversal. |
+
+If MCP servers are declared on the agent (see [MCP servers](/configuration/mcp-servers)), their tools are also attached.
+
+## Compaction
+
+The orchestrator session is wrapped in `OpenAIResponsesCompactionSession` with a default threshold of **40 non-user items**. When the session grows past that, older turns are folded into a summary so the context window doesn't blow up. The user can force compaction with `/compact`.
+
+## Streaming and non-streaming
+
+`runOneShotAsyncGenerator` accepts a `streamingEnabled` flag. Both modes yield the same event sequence; streaming just emits `text` events incrementally as tokens arrive. The CLI exposes this with `chat -s` and `run -s`.
+
+## What's not in the runtime
+
+- **Agent code generation.** Skills are markdown + scripts. The LLM picks which script to run; it does not write the script itself.
+- **Long-running work inside a single turn.** A `chat`/`run` turn is request/response. For durable, multi-step, or scheduled background work, the runtime has a separate **job lane** — see [Jobs & Scheduling](/jobs/overview).
+- **State outside the session.** Skills persist whatever they want in their own folder (typically a JSON file under `_data/`). The runtime owns the session store, the cache, the cost tracker, and (for background work) the job board.
+
+## Next
+
+- [Sessions and logs](/concepts/sessions-and-logs) — where conversation state and replay logs live.
+- [Caching and cost](/concepts/caching-and-cost) — how the OpenAI cache and cost tracker plug into the request path.
+- [API › AgentRunner](/api/classes/AgentRunner) — the programmatic interface.

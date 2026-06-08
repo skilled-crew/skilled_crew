@@ -1,0 +1,91 @@
+---
+title: Sessions and logs
+---
+
+# Sessions and logs
+
+A skillet keeps two distinct stores per conversation:
+
+- **A SQLite session store** is the canonical state the LLM sees. It holds the running list of items (user messages, assistant outputs, tool calls) that get re-sent to the model on the next turn.
+- **A JSONL replay log** is an append-only file the UI reads back to redraw a conversation. CLI replays and the web chat both consume the same file.
+
+Both are scoped by `userId` + `sessionName`. The CLI exposes both as flags (`--user-id`, `--session-name`); when omitted they default to `user_cli` and a freshly generated `session_<ISO timestamp>_<random>`. (The library-level `DEFAULT_USER_ID` / `DEFAULT_SESSION_NAME` constants exist, but the CLI overrides them with those values.)
+
+## SQLite session store
+
+File: `./outputs/.agent_sessions.sqlite`. Schema:
+
+```sql
+session_items (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      TEXT NOT NULL,
+  session_name TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  item_json    TEXT NOT NULL
+)
+```
+
+Items are stored as opaque JSON blobs from the OpenAI Agents SDK. You can poke at it with `sqlite3` if needed:
+
+```bash
+sqlite3 ./outputs/.agent_sessions.sqlite \
+  "SELECT count(*) FROM session_items WHERE user_id = 'user_cli';"
+```
+
+The store is wrapped by `OpenAIResponsesCompactionSession` so the runtime never re-sends more than the compaction threshold (default 40 non-user items). Older content is collapsed into a summary turn.
+
+## JSONL replay log
+
+Each `(userId, sessionName)` pair gets a single append-only file:
+
+```
+./outputs/.agent_session_logs/{userId}/{sessionName}.jsonl
+```
+
+Names are sanitized to `[a-zA-Z0-9_-]+` before being used as path segments.
+
+A turn is **one** user message followed by zero or more step entries, closed by **one** final result. Three entry shapes — `kind: 'user_message'`, `kind: 'step'`, `kind: 'final_result'` — each timestamped:
+
+```jsonl
+{"kind":"user_message","userInput":"what's on my list?","timestamp":"2026-05-27T20:11:02.482Z"}
+{"kind":"step","stepResult":{"type":"agent_start","agentName":"todo_list_agent"},"timestamp":"..."}
+{"kind":"step","stepResult":{"type":"agent_tool_start","agentName":"list-tasks","toolName":"run_command_line","toolArgumentsStr":"..."},"timestamp":"..."}
+{"kind":"step","stepResult":{"type":"agent_tool_end","agentName":"list-tasks","toolName":"run_command_line","result":"1. [ ] buy milk"},"timestamp":"..."}
+{"kind":"step","stepResult":{"type":"text","text":"1. [ ] buy milk"},"timestamp":"..."}
+{"kind":"final_result","finalResult":{"text":"1. [ ] buy milk"},"timestamp":"..."}
+```
+
+The step event types come straight from [`AgentRunnerStepResult`](/api/type-aliases/AgentRunnerStepResult).
+
+## Reading a replay
+
+When you start `chat` or `run` with an existing `--session-name`, the prior turns are **replayed automatically** before the first prompt — there is no `--replay` flag. To follow a log directly, tail the JSONL file:
+
+```bash
+# Tail live as a chat (or a job worker) runs
+tail -f ./outputs/.agent_session_logs/user_cli/<session-name>.jsonl | jq
+
+# Stream every session log under the logs root, oldest-first, then follow new appends
+npx tsx ./src/cli.ts log stream
+```
+
+`log stream` discovers every `.jsonl` under `./outputs/.agent_session_logs` (override with `--logs-dir`); it is the easiest way to watch running [job](/jobs/overview) workers. `SessionLogReader` and `SessionLogTailer` are also exported from the library — see [API › SessionLogReader](/api/classes/SessionLogReader).
+
+## Clearing state
+
+The session store and the log are independent. Both can be wiped:
+
+```bash
+# Drop one session's LLM context
+sqlite3 ./outputs/.agent_sessions.sqlite \
+  "DELETE FROM session_items WHERE user_id='user_cli' AND session_name='<session-name>';"
+
+# Drop one session's UI log
+rm ./outputs/.agent_session_logs/user_cli/<session-name>.jsonl
+```
+
+There's no single "clear everything" command in the CLI today — drop the files or rows you want gone.
+
+## Picking userId and sessionName
+
+For local development, the defaults are fine. For multi-user web hosting (the `_skillet_webclient` package wires this), the `userId` comes from the authenticated session. The `sessionName` is what differentiates conversations within one user; a new sessionName starts an empty context window.

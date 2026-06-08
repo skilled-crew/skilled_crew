@@ -1,0 +1,81 @@
+---
+title: HTTP API
+---
+
+# HTTP API
+
+The server exposes auth routes under `/auth/*` and a JSON/SSE API under `/api/*`. Endpoints marked **SSE** stream `text/event-stream` frames; the rest are JSON. "Auth" is **public** (no login), **login** (any signed-in user; others get redirected or `401`), or **admin**. Routes that operate on a specific job, session, or schedule additionally check ownership — non-owners get `404`, admins bypass it. A bundled `openapi.yaml` (viewable at `/openapi/`) describes the same surface.
+
+## Auth — `/auth/*`
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/auth/google` | public | Begin Google OAuth (only when enabled). |
+| GET | `/auth/google/callback` | public | OAuth callback → redirect to profile (or login on failure). |
+| POST | `/auth/login` | public | Local email/password login. |
+| GET | `/auth/logout` | public | Log out, redirect to landing. |
+| GET | `/auth/me` | public | Current user profile JSON, or `null`. |
+| GET | `/auth/google-enabled` | public | `{ enabled: boolean }` — whether Google sign-in is configured. |
+
+## Sessions — `/api/session/*`
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/api/session/create` | login | Create a chat session for a preset agent (optional `modelSpec`, `sessionName`). |
+| POST | `/api/session/newUserMessage/:id` | login | **SSE** — send a message and stream the agent's reply. |
+| GET | `/api/session/replay/:sessionName` | login | **SSE** — replay a past session from its JSONL log. |
+| GET | `/api/session/names` | login | List the user's saved session names. |
+| GET | `/api/session/get/:id` | login | Session metadata (live or from a stored handle). |
+| POST | `/api/session/delete/:id` | login | Close a live session. |
+| DELETE | `/api/session/byName/:sessionName` | login | Delete a saved session (history + log). |
+
+A chat turn streams `chunk` frames (one per agent step) followed by a terminating `done` frame; replay re-frames a stored log into the same `user_message` → `chunk` → `final_result` shape so the browser renderer is identical for live and historical conversations.
+
+## Models — `/api/models`
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/models` | login | Dynamic list of selectable models — curated OpenAI models (when `OPENAI_API_KEY` is set) plus any loaded [LMStudio](/models) models, cached briefly. |
+
+## Jobs — `/api/jobs/*`
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/jobs` | login | List board jobs (`?status=`, `?mine=`); non-admins are scoped to their own. |
+| POST | `/api/jobs` | login | Instantiate a [template](/jobs/job-templates) and commit a crew (`?scheduledAt`). |
+| GET | `/api/jobs/:jobId` | owner/admin | Job detail (job, runs, events, comments, parent results). |
+| GET | `/api/jobs/:jobId/stream` | owner/admin | **SSE** — tail the latest run's session log live. |
+| GET | `/api/jobs/:jobId/graph` | owner/admin | The job's whole crew, dependency-ordered. |
+| GET | `/api/jobs/:jobId/artifact` | owner/admin | Stream the latest run's saved file (`?download=1`, `?format=html`). |
+| POST | `/api/jobs/:jobId/comments` | owner/admin | Add a comment. |
+| POST | `/api/jobs/:jobId/unblock` | owner/admin | Move a blocked job back to ready. |
+| POST | `/api/jobs/:jobId/redo` | owner/admin | Re-queue a done/blocked job with feedback. |
+| POST | `/api/jobs/:jobId/archive` | owner/admin | Soft-delete (status → archived). |
+| DELETE | `/api/jobs/:jobId` | owner/admin | Delete a job (not while running). |
+| POST | `/api/jobs/clear` | admin | Wipe the board (or one status column). |
+
+## Dispatcher — `/api/dispatcher/*`
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/dispatcher/status` | login | Read-only [dispatcher](/jobs/dispatcher) liveness from the board heartbeat. |
+
+## Templates — `/api/templates`
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/templates` | login | List discovered `*.job_workflow.yaml` (id, name, description, inputs). |
+
+## Schedules — `/api/schedules/*`
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| GET | `/api/schedules` | login | List [schedules](/jobs/schedules) (`?mine=`). |
+| POST | `/api/schedules` | login | Create a schedule (template + inputs + rule + timezone). |
+| GET | `/api/schedules/:id` | owner/admin | One schedule. |
+| GET | `/api/schedules/:id/jobs` | owner/admin | Jobs spawned by this schedule. |
+| PATCH | `/api/schedules/:id` | owner/admin | Edit name / inputs / rule / timezone. |
+| POST | `/api/schedules/:id/enable` | owner/admin | Resume; recompute next run. |
+| POST | `/api/schedules/:id/disable` | owner/admin | Pause; clear next run. |
+| POST | `/api/schedules/:id/run-now` | owner/admin | Spawn a crew immediately. |
+| DELETE | `/api/schedules/:id` | owner/admin | Delete the schedule (spawned jobs are kept). |

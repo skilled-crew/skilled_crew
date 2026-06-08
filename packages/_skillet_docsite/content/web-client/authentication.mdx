@@ -1,0 +1,36 @@
+---
+title: Authentication
+---
+
+# Authentication
+
+The web client authenticates users with [Passport](https://www.passportjs.org/) and keeps a server-side session. Two sign-in methods are supported; which are available depends on your configuration.
+
+## Sign-in methods
+
+**Local (email + password).** Always available. Passwords are hashed with **bcrypt** (12 salt rounds) and stored in the user table. There is no open self-registration endpoint — local accounts are provisioned server-side (see the seeding script in `user-store.ts`).
+
+**Google (OAuth 2.0).** Enabled only when **both** `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set. If either is missing, Google sign-in is gracefully disabled (the login page hides the Google button) and only local auth remains. The OAuth callback is `/auth/google/callback`, scope `profile email`.
+
+> **Security note — admin is opt-in.** Local accounts default to `is_admin = 0`; admin is granted only when an account is explicitly seeded with `isAdmin: true`. There is no open registration endpoint, so untrusted visitors cannot self-provision an account. Admins can see the [job board](/web-client/pages#job-board) for *all* users and clear the board.
+
+## Where state lives
+
+Both stores are SQLite files under `_skillet_agent/outputs/`:
+
+- `.user_store.sqlite` — the `users` table (id, email, display name, hashed password, `authProvider`, `isAdmin`).
+- `.web_sessions.sqlite` — the express-session store (`better-sqlite3-session-store`), so logins survive server restarts and crashes rather than living in memory.
+
+Sessions are signed with `SESSION_SECRET` (**required** — the server exits at boot without it). Cookies are rolling with a 30-day max age; expired rows are swept every 15 minutes. Passport serializes only the user **id** into the session and reloads the full record on each request.
+
+## Route protection
+
+Page routes are guarded by middleware:
+
+| Routes | Requirement |
+|---|---|
+| `/chat`, `/profile`, `/inbox`, `/schedules` | Logged in (redirect to `/login/` otherwise). |
+| `/job_board` | Admin (redirect to `/profile/` otherwise). |
+| Landing, `/login`, `/pricing` | Public. |
+
+The `/api/*` endpoints enforce the same ownership rules in-handler: non-admins only see and act on their own jobs, sessions, and schedules, and requests for resources they don't own return `404` (not `403`) so they can't probe which ids exist. See the [HTTP API](/web-client/api) for per-route detail.

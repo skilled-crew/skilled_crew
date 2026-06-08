@@ -1,0 +1,36 @@
+{
+  "name": "q1-forecast",
+  "created_at": "2026-05-23T11:11:49.389Z",
+  "updated_at": "2026-05-23T11:11:49.392Z",
+  "dimensions": [
+    "Jan 2026",
+    "Feb 2026",
+    "Mar 2026"
+  ],
+  "metrics": [
+    {
+      "name": "Revenue",
+      "unit": "USD"
+    },
+    {
+      "name": "Costs",
+      "unit": "USD"
+    }
+  ],
+  "assumptions": {
+    "revenue_growth_rate": 0.1,
+    "cost_ratio": 0.7
+  },
+  "data": {
+    "Revenue": {
+      "Jan 2026": 100000,
+      "Feb 2026": 110000,
+      "Mar 2026": 115000
+    },
+    "Costs": {
+      "Jan 2026": 70000,
+      "Feb 2026": 77000,
+      "Mar 2026": 80500
+    }
+  }
+}
