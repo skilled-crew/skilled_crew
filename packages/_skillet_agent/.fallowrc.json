@@ -1,0 +1,35 @@
+{
+    "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+    "entry": [
+        "src/cli.ts",
+        "src/index.ts",
+        "examples/**/*.ts",
+        "scripts/**/*.ts"
+    ],
+    "ignorePatterns": [
+        "dist/**",
+        "outputs/**",
+        "data/**",
+        "**/*.d.ts"
+    ],
+    "ignoreExportsUsedInFile": true,
+    "duplicates": {
+        "minOccurrences": 3
+    },
+    "rules": {
+        "unresolved-imports": "error",
+        "unused-files": "warn",
+        "unused-exports": "warn",
+        "unused-types": "off"
+    },
+    "audit": {
+        "gate": "new-only"
+    },
+    "health": {
+        "ignore": [
+            "tests/**",
+            "examples/**",
+            "scripts/**"
+        ]
+    }
+}
